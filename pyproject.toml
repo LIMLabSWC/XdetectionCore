@@ -15,9 +15,6 @@ dependencies = [
     "scipy",
     "tqdm",
     "joblib",
-    "quantities",
-    "neo",
-    "elephant",
     "pytest",
 ]
 [project.optional-dependencies]

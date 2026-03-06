@@ -49,9 +49,7 @@ pip install -e .
 - scipy
 - tqdm
 - joblib
-- quantities
-- neo
-- elephant
+
 
 ## 🎯 Quick Start
 
@@ -286,8 +284,6 @@ This project is licensed under the License specified in the [LICENSE](LICENSE) f
 
 - **Neo**: Neural data standards and I/O
 - **Elephant**: Electrophysiology analysis toolkit
-- **Joblib**: Parallel processing utilities
-
 ---
 
 **Maintained by the Akrami Lab (LIM Lab)**  

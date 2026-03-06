@@ -7,7 +7,6 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from .decoding.decoding_funcs import Decoder
 from .ephys.generate_synthetic_spikes import gen_patterned_unit_rates, gen_patterned_time_offsets
 from .io_utils import load_sound_bin, format_sound_writes, read_lick_times
 from .ephys.spike_time_utils import SessionSpikes, get_times_in_window
@@ -219,20 +218,23 @@ class Session:
             pickle.dump(to_save, pklfile)
 
     def init_decoder(self, decoder_name: str, predictors, features, model_name='logistic'):
-        self.decoders[decoder_name] = Decoder(predictors, features, model_name)
+        raise NotImplementedError('Decoder as part of Session class deprecated, use standalone Decoder class instead')
+        # self.decoders[decoder_name] = Decoder(predictors, features, model_name)
 
     def run_decoder(self, decoder_name, labels, plot_flag=False, decode_shuffle_flag=False, dec_kwargs=None, **kwargs):
-        self.decoders[decoder_name].decode(dec_kwargs=dec_kwargs, **kwargs)
-        if plot_flag:
-            from .plotting import plot_decoder_accuracy
-            plot_decoder_accuracy(self.decoders[decoder_name].accuracy, labels=labels, )
+        raise NotImplementedError('Decoder as part of Session class deprecated, use standalone Decoder class instead')
+        # self.decoders[decoder_name].decode(dec_kwargs=dec_kwargs, **kwargs)
+        # if plot_flag:
+        #     from .plotting import plot_decoder_accuracy
+        #     plot_decoder_accuracy(self.decoders[decoder_name].accuracy, labels=labels, )
 
     def map_preds2sound_ts(self, sound_event, decoders, psth_window, window, map_kwargs={}):
-        sound_event_ts = get_predictor_from_psth(self, sound_event, psth_window, window, mean=None, mean_axis=0)
-        prediction_ts_list = [np.array([self.decoders[decoder].map_decoding_ts(trial_ts, **map_kwargs)
-                                        for decoder in decoders]) for trial_ts in sound_event_ts]
-        prediction_ts = np.array(prediction_ts_list)
-        return prediction_ts
+        raise NotImplementedError('Decoder as part of Session class deprecated, use standalone Decoder class instead')
+        # sound_event_ts = get_predictor_from_psth(self, sound_event, psth_window, window, mean=None, mean_axis=0)
+        # prediction_ts_list = [np.array([self.decoders[decoder].map_decoding_ts(trial_ts, **map_kwargs)
+        #                                 for decoder in decoders]) for trial_ts in sound_event_ts]
+        # prediction_ts = np.array(prediction_ts_list)
+        # return prediction_ts
 
     def load_trial_data(self, tdfile_path):
         self.td_df = pd.read_csv(tdfile_path)
