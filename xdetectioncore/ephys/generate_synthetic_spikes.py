@@ -1,8 +1,6 @@
 import numpy as np
 from scipy import stats
-from quantities import s, Hz, ms
 from matplotlib import pyplot as plt
-import matplotlib
 from scipy.signal.windows import gaussian
 
 
