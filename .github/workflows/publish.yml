@@ -23,6 +23,8 @@ jobs:
     - name: Run Pytest
       run: pytest
 
+    
+
   build-n-publish:
     name: Build and publish to PyPI
     needs: test
@@ -44,9 +46,11 @@ jobs:
 
     - name: Install build tool
       run: pip install build
-
-    - name: Build binary wheel and source tarball
-      run: python -m build
+    
+    - name: Build binary
+      run: |
+        rm -rf dist/   # Force delete any existing dist folder
+        python -m build
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
