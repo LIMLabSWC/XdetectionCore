@@ -5,12 +5,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from elephant.kernels import GaussianKernel, ExponentialKernel
-from elephant.statistics import instantaneous_rate
-from neo import SpikeTrain
-from quantities import s, ms
 from scipy.signal import convolve
-from scipy.signal.windows import gaussian
+from scipy.signal.windows import gaussian, exponential
+from scipy.ndimage import gaussian_filter1d
 from scipy.stats import zscore
 from tqdm import tqdm
 
@@ -18,6 +15,37 @@ from .generate_synthetic_spikes import gen_responses
 from ..io_utils import load_spikes
 from typing import Dict, List, Optional, Union
 TrialSelector = Optional[Union[slice, List[int]]]
+
+def fast_instantaneous_rate(spike_times: np.ndarray, t_start: float, t_stop: float, 
+                            sampling_period: float, kernel_type='gaussian', kernel_width=0.04):
+    """
+    Fast replacement for elephant.statistics.instantaneous_rate.
+    """
+    # Create time bins
+    bins = np.arange(t_start, t_stop + sampling_period, sampling_period)
+    
+    # Bin spikes (count spikes in each bin)
+    counts, _ = np.histogram(spike_times, bins=bins)
+    
+    # Convert counts to firing rate (Hz)
+    rate = counts / sampling_period
+    
+    # Apply smoothing
+    sigma_bins = kernel_width / sampling_period
+    
+    if kernel_type == 'gaussian':
+        # gaussian_filter1d is highly optimized for 1D arrays
+        smoothed_rate = gaussian_filter1d(rate.astype(float), sigma=sigma_bins, mode='constant', cval=0.0)
+    elif kernel_type == 'exponential':
+        # Create a symmetric exponential kernel approximation
+        window_size = int(sigma_bins * 10) + 1
+        kernel = exponential(window_size, center=(window_size-1)//2, tau=sigma_bins, sym=True)
+        kernel /= kernel.sum()
+        smoothed_rate = convolve(rate, kernel, mode='same')
+    else:
+        smoothed_rate = rate
+        
+    return smoothed_rate
 
 
 def cluster_spike_times(spike_times: np.ndarray, spike_clusters: np.ndarray) -> dict:
@@ -29,39 +57,26 @@ def cluster_spike_times(spike_times: np.ndarray, spike_clusters: np.ndarray) -> 
     return cluster_spike_times_dict
 
 
-def get_times_in_window(all_times: np.ndarray,window: [list | np.ndarray]) -> np.ndarray:
+def get_times_in_window(all_times: np.ndarray,window: (list | np.ndarray)) -> np.ndarray:
     return all_times[(all_times >= window[0]) * (all_times <= window[1])]
 
 
-def get_spike_rate_in_window(spike_times: np.ndarray, window: [list | np.ndarray], fs):
-    spike_train = SpikeTrain(spike_times*s,t_start=window[0],t_stop=window[1])
-    bin_firing_rate = np.squeeze(np.array(instantaneous_rate(spike_train,sampling_period=100*ms,
-                                                             kernel=GaussianKernel(20*ms))))
-
+def get_spike_rate_in_window(spike_times: np.ndarray, window: (list | np.ndarray), fs):
+    bin_firing_rate = fast_instantaneous_rate(spike_times, window[0], window[1], 
+                                              sampling_period=0.1, kernel_type='gaussian', kernel_width=0.02)
     return bin_firing_rate
 
 
-def get_spike_times_in_window(event_time: int, spike_time_dict: dict, window: [list | np.ndarray], fs):
+def get_spike_times_in_window(event_time: int, spike_time_dict: dict, window: (list | np.ndarray), fs):
     """
     Get spike times in a specified window for a given event.
-
-    Parameters:
-    - event_time: int
-    - spike_time_dict: dict
-    - window: list or np.ndarray
-    - fs: unspecified type
-
-    Returns:
-    - window_spikes_dict: dict
     """
     window_spikes_dict = {}
 
     for cluster_id in tqdm(spike_time_dict, desc='getting spike times for event', total=len(spike_time_dict),
                            disable=True):
         all_spikes = (spike_time_dict[cluster_id] - event_time)  # / fs
-
         window_spikes_dict[cluster_id] = all_spikes[(all_spikes >= window[0]) * (all_spikes <= window[1])]
-
 
     return window_spikes_dict
 
@@ -70,15 +85,15 @@ def gen_spike_matrix(spike_time_dict: dict, window, fs, kernel_width=40):
     fs = 100
     precision = np.ceil(np.log10(fs)).astype(int)
     time_cols = np.round(np.arange(window[0], window[1] + 1 / fs, 1 / fs), precision)
-    # spike_matrix = pd.DataFrame(np.zeros((len(spike_time_dict), int((window[1] - window[0]) * fs) + 1)),
-    #                             index=list(spike_time_dict.keys()), columns=time_cols)
 
-
-    event_psth = [np.squeeze(np.array(instantaneous_rate(SpikeTrain(c_spiketimes * s,
-                                                                    t_start=window[0], t_stop=window[-1]*s+0.011*s),
-                                                         sampling_period=10 * ms,
-                                                         kernel=ExponentialKernel(kernel_width * ms))))
-                  for c_spiketimes in spike_time_dict.values()]
+    event_psth = []
+    for c_spiketimes in spike_time_dict.values():
+        rate = fast_instantaneous_rate(c_spiketimes, window[0], window[-1] + 0.011, 
+                                       sampling_period=0.01, kernel_type='exponential', 
+                                       kernel_width=kernel_width / 1000.0)
+        # Ensure array length aligns exactly with time_cols
+        event_psth.append(rate[:len(time_cols)])
+        
     spike_matrix = pd.DataFrame(event_psth,columns=time_cols,index=list(spike_time_dict.keys()))
     spike_matrix.columns = pd.to_timedelta(spike_matrix.columns, 's')
 
@@ -87,7 +102,6 @@ def gen_spike_matrix(spike_time_dict: dict, window, fs, kernel_width=40):
 
 def gen_firing_rate_matrix(spike_matrix: pd.DataFrame, bin_dur=0.01, baseline_dur=0.0,
                            zscore_flag=False, gaus_std=0.04) -> pd.DataFrame:
-    # print(f'zscore_flag = {zscore_flag}')
     if gaus_std:
         gaus_window = gaussian(int(gaus_std / bin_dur*2), int(gaus_std / bin_dur*2))
         gaus_window = np.array_split(gaus_window,2)[1]
@@ -103,72 +117,31 @@ def gen_firing_rate_matrix(spike_matrix: pd.DataFrame, bin_dur=0.01, baseline_du
         rate_matrix = rate_matrix.sub(np.mean(rate_matrix.loc[:, timedelta(0, -baseline_dur):timedelta(0, 0)],axis=1),
                                       axis=0)
     if zscore_flag:
-        # rate_matrix = (rate_matrix.T - rate_matrix.mean(axis=1))/rate_matrix.std(axis=1)
         rate_matrix = zscore(rate_matrix, axis=1, )
     rate_matrix = rate_matrix.fillna(0)
     return rate_matrix
 
 
-import numpy as np
-from typing import Dict
-
-
 def zscore_by_trial(resp_dict: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, Dict[str, np.ndarray]]:
-    """
-    Z-score responses per session and pip across the last axis (time).
-
-    Parameters
-    ----------
-    resp_dict : dict
-        Nested dict {session: {pip: response_array}}
-
-    Returns
-    -------
-    dict
-        {session: {pip: zscored_response_array}}
-    """
     zscore_by_trial_resps: Dict[str, Dict[str, np.ndarray]] = {}
     for sess, sess_resps in resp_dict.items():
-        # first compute all zscored responses
         zscored = {}
         for pip, pip_resps in sess_resps.items():
             mean = pip_resps.mean(axis=-1, keepdims=True)
             std = pip_resps.std(axis=-1, keepdims=True)
             zscored[pip] = (pip_resps - mean) / (std+1e-14)
 
-        # stack to find rows with NaNs across any pip
         is_nan_by_pip = [np.any(np.isnan(pip_resps.mean(axis=0)),axis=-1) for pip_resps in zscored.values()]
         mask = ~np.any(is_nan_by_pip, axis=0)
 
-        # apply mask back to each pip
         zscore_by_trial_resps[sess] = {pip: arr[:,mask] for pip, arr in zscored.items()}
     return zscore_by_trial_resps
 
 
-
 def concat_and_clean_responses(resp_dict: Dict[str, Dict[str, np.ndarray]],
                                trial_slices: Optional[List[TrialSelector]] = None) -> Dict[str, np.ndarray]:
-    """
-    Concatenate responses across sessions, apply optional slicing per pip,
-    remove NaNs row-wise, and return dict suitable for PCA.
-
-    Parameters
-    ----------
-    resp_dict : dict
-        Nested dict {session: {pip: response_array}}
-    trial_slices : list of slice, list of int, or None, optional
-        One entry per pip (same order as dict keys). If None, uses all trials.
-        If an element is None, all trials are used for that pip.
-        If a list of int is given, selects those indices.
-
-    Returns
-    -------
-    dict
-        {pip: cleaned_concat_responses}
-    """
     pip_keys = list(resp_dict.values())[0].keys()
 
-    # if trial_slices not provided, use None for all pips
     if trial_slices is None:
         trial_slices = [None] * len(pip_keys)
 
@@ -201,20 +174,6 @@ def concat_and_clean_responses(resp_dict: Dict[str, Dict[str, np.ndarray]],
 class SessionSpikes:
     def __init__(self, spike_times_path: (Path | str), spike_clusters_path: (Path | str), sess_start_time: float,
                  parent_dir=Path(''), fs=3e4, resample_fs=1e3, beh_write_data_path=None, **kwargs):
-        """
-        Initialize the SpikeSorter class.
-
-        Parameters:
-            spike_times_path (Path|str): The path to the spike times file.
-            spike_clusters_path (Path|str): The path to the spike clusters file.
-            sess_start_time (float): The start time of the session.
-            parent_dir (optional): The parent directory. Defaults to None.
-            fs (float): The sampling frequency. Defaults to 30000.0.
-            resample_fs (float): The resampled sampling frequency. Defaults to 1000.0.
-
-        Returns:
-            None
-        """
         self.spike_times_path = spike_times_path
         self.spike_clusters_path = spike_clusters_path
         self.start_time = sess_start_time
@@ -237,18 +196,15 @@ class SessionSpikes:
                       f'Assuming linear drift')
                 self.spike_times = self.sync_by_start_end(kwargs.get('rec_dir'),beh_write_data_path)
                 ttl_sync=False
-                # self.spike_times = self.spike_times + sess_start_time  # units seconds
 
         else:
-            self.spike_times = self.spike_times + sess_start_time  # units seconds
-        # if ttl_sync and 'DO95' not in beh_write_data_path.stem:
-            # exit()
+            self.spike_times = self.spike_times + sess_start_time 
+            
         self.duration = self.spike_times[-1] - self.start_time
 
         self.cluster_spike_times_dict = cluster_spike_times(self.spike_times, self.clusters)
         self.bad_units = set()
-        # self.curate_units()
-        # self.curate_units_by_rate()
+        
         self.good_units = None
         if (parent_dir / 'good_units.csv').is_file():
             self.good_units = pd.read_csv(parent_dir / 'good_units.csv').iloc[:, 0].to_list()
@@ -256,6 +212,7 @@ class SessionSpikes:
             self.good_units = pd.read_csv(parent_dir.parent / 'good_units.csv').iloc[:, 0].to_list()
         else:
             self.good_units = None
+            
         if self.good_units is not None and False:
             unit_ids = list(self.cluster_spike_times_dict.keys())
             for unit in unit_ids:
@@ -264,6 +221,7 @@ class SessionSpikes:
             print(f'good units: {self.good_units}')
         else:
             self.curate_units_by_rate()
+            
         self.unit_means = self.get_unit_mean_std()
         self.units = list(self.cluster_spike_times_dict.keys())
         self.event_spike_matrices = multiprocessing.Manager().dict()
@@ -288,7 +246,6 @@ class SessionSpikes:
         if set_dict is not None:
             sync_pin = 'DO2' if 'DO2' in list(set_dict.keys()) else 'PWM'
             sync_arr = np.array(set_dict[sync_pin]['Timestamp'])
-
         else:
             sync_pin = 'DO2' if 'DO2' in write_data_df.columns else 'PWM'
             # get rising events
@@ -305,6 +262,7 @@ class SessionSpikes:
         print(f'{recording_dir = }')
         sync_event_dir = next(recording_dir.rglob('TTL'))
         sync_message_file = next(recording_dir.rglob('sync_messages.txt'))
+        
         # read sync messages
         with open(sync_message_file, 'r') as f:
             sync_messages = f.readlines()
@@ -329,11 +287,9 @@ class SessionSpikes:
         return ttl_sink_times, sync_arr[:len(ttl_sink_times)],
 
     def sync_by_start_end(self, recording_dir,beh_write_data_path):
-
         # Read write data
         write_data_df = pd.read_csv(beh_write_data_path)
         assert any(sync_pin in write_data_df.columns for sync_pin in ['DO3'])
-
 
         sync_pin = 'DO3'
         # get rising events
@@ -351,24 +307,17 @@ class SessionSpikes:
 
         return corrected_ts + start_ttl
 
-
     def sync_spike_times(self,sync_sink_times,sync_source_times):
         from io_utils import sync_using_latest_ttl
         spike_times = self.spike_times
         spike_times = sync_using_latest_ttl(spike_times, sync_sink_times, sync_source_times)
         self.spike_times = spike_times
 
-    def get_event_spikes(self, event_times: [list | np.ndarray | pd.Series], event_name: str,
-                         window: [list | np.ndarray], get_spike_matrix=True):
+    def get_event_spikes(self, event_times: (list | np.ndarray | pd.Series), event_name: str,
+                         window: (list | np.ndarray), get_spike_matrix=True):
         if self.event_cluster_spike_times is None:
             self.event_cluster_spike_times = multiprocessing.Manager().dict()
 
-        # with multiprocessing.Pool() as pool:
-        #     results = pool.map(partial(get_spike_times_in_window,window=window, fs=self.new_fs,
-        #                                spike_time_dict=self.cluster_spike_times_dict),
-        #                        event_times)
-        #     for event_time, val in zip(list(event_times), results):
-        #         self.event_cluster_spike_times[f'{event_name}_{event_time}'] = val
         for event_time in event_times:
             if f'{event_name}_{event_time}' not in list(self.event_cluster_spike_times.keys()):
                 self.event_cluster_spike_times[f'{event_name}_{event_time}'] = get_spike_times_in_window(event_time,
@@ -378,60 +327,40 @@ class SessionSpikes:
             if get_spike_matrix:
                 if self.event_spike_matrices is None:
                     self.event_spike_matrices = multiprocessing.Manager().dict()
-        # with multiprocessing.Pool() as pool:
-        #     results = pool.map(partial(gen_spike_matrix,window=window, fs=self.new_fs),
-        #                        list(self.event_cluster_spike_times.values()))
-        #     for key, val in zip(list(self.event_cluster_spike_times.keys()), results):
-        #         self.event_spike_matrices[key] = val
-                # self.event_spike_matrices[f'{event_name}_{event_time}'] = gen_spike_matrix(
-                                        # self.event_cluster_spike_times[f'{event_name}_{event_time}'],
-                                        # window, self.new_fs)
+
                 if f'{event_name}_{event_time}' not in list(self.event_spike_matrices.keys()):
                     self.event_spike_matrices[f'{event_name}_{event_time}'] = gen_spike_matrix(
                         self.event_cluster_spike_times[f'{event_name}_{event_time}'],
                         window, self.new_fs)
 
-
     def curate_units(self):
-        # self.bad_units = set()
         for unit in self.cluster_spike_times_dict:
             d_spike_times = np.diff(self.cluster_spike_times_dict[unit])
             if np.mean(d_spike_times > 10) > 0.05:
-                # self.cluster_spike_times_dict.pop(unit)
                 self.bad_units.add(unit)
-        print(
-            f'popped units {self.bad_units}, remaining units: {len(self.cluster_spike_times_dict) - len(self.bad_units)}/{len(self.cluster_spike_times_dict)}')
+        print(f'popped units {self.bad_units}, remaining units: {len(self.cluster_spike_times_dict) - len(self.bad_units)}/{len(self.cluster_spike_times_dict)}')
         for unit in self.bad_units:
             self.cluster_spike_times_dict.pop(unit)
 
     def curate_units_by_rate(self):
-        # self.bad_units = set()
         for unit in self.cluster_spike_times_dict:
             d_spike_times = np.diff(self.cluster_spike_times_dict[unit])
             if np.mean(d_spike_times) > (1 / 0.05):
-                # self.cluster_spike_times_dict.pop(unit)
                 self.bad_units.add(unit)
-        print(
-            f'popped units {self.bad_units}, remaining units: {len(self.cluster_spike_times_dict) - len(self.bad_units)}/{len(self.cluster_spike_times_dict)}')
+        print(f'popped units {self.bad_units}, remaining units: {len(self.cluster_spike_times_dict) - len(self.bad_units)}/{len(self.cluster_spike_times_dict)}')
         for unit in self.bad_units:
             self.cluster_spike_times_dict.pop(unit)
 
     def get_unit_mean_std(self,time_bins_idx=None):
-
         unit_means = np.full(len(self.cluster_spike_times_dict), np.nan)
         unit_stds = np.full(len(self.cluster_spike_times_dict), np.nan)
 
         for i, unit in sorted(list(enumerate(self.cluster_spike_times_dict))):
-            # unit_means[i] = (self.cluster_spike_times_dict[unit].shape / self.duration)
-            time_bin = 1
-            # unit_rates = [get_times_in_window(self.cluster_spike_times_dict[unit], [i, i + time_bin]).shape[0]/time_bin
-            #               for i in np.arange(int(self.start_time), int(self.start_time) + int(self.duration), time_bin)]
-            spike_train = SpikeTrain(self.cluster_spike_times_dict[unit]*s,t_start=self.start_time,
-                                     t_stop=self.start_time + self.duration)
-            unit_rates = np.squeeze(np.array(instantaneous_rate(spike_train,sampling_period=100*ms,
-                                                                kernel=GaussianKernel(40*ms))))
+            unit_rates = fast_instantaneous_rate(self.cluster_spike_times_dict[unit], 
+                                                 self.start_time, self.start_time + self.duration, 
+                                                 sampling_period=0.1, kernel_type='gaussian', kernel_width=0.04)
             unit_means[i] = np.mean(unit_rates)
-            # unit_rates = np.array(unit_rates)
+            
             if time_bins_idx is not None:
                 assert len(time_bins_idx) == len(unit_rates)
                 unit_rates = unit_rates[time_bins_idx]
@@ -439,13 +368,12 @@ class SessionSpikes:
             unit_stds[i] = np.std(unit_rates) if np.std(unit_rates) > 0.01 else 1
 
         assert np.isnan(unit_means).sum() == 0 + np.isnan(unit_stds).sum() == 0, 'Nans in mean and std'
-        # return 0.1*unit_means, 0.1*unit_stds
         return unit_means, unit_stds
 
 
-def get_event_psth(sess_spike_obj: SessionSpikes, event_idx, event_times: [pd.Series, np.ndarray, list],
-                   window: [float, float], event_lbl: str, baseline_dur=0.25, zscore_flag=False, iti_zscore=None,
-                   gaus_std=0.04, synth_data=None, synth_params=None) -> (np.ndarray, pd.DataFrame):
+def get_event_psth(sess_spike_obj: SessionSpikes, event_idx, event_times: (pd.Series| np.ndarray| list),
+                   window: list[float, float], event_lbl: str, baseline_dur=0.25, zscore_flag=False, iti_zscore=None,
+                   gaus_std=0.04, synth_data=None, synth_params=None) -> tuple[np.ndarray, pd.DataFrame]:
     if iti_zscore:
         zscore_flag = False
 
@@ -464,28 +392,19 @@ def get_event_psth(sess_spike_obj: SessionSpikes, event_idx, event_times: [pd.Se
             unit_time_offsets = synth_params['unit_time_offsets'] if synth_params else None
         synth_times = gen_responses(unit_rates, len(event_times), np.arange(window[0],window[1],0.002),
                                     unit_time_offsets=unit_time_offsets)
-        spike_trains = [[SpikeTrain(ee, t_start=window[0], t_stop=window[1]*s+0.11*s, units=s) for ee in e] for e in synth_times]
-        all_event_list = np.array([instantaneous_rate(st, 100 * ms, kernel=GaussianKernel(40*ms)).T for st in spike_trains])
+        
+        # Replaced synth data spike trains with fast instantaneous rate
+        all_event_list = []
+        for trial in synth_times:
+            trial_rates = [fast_instantaneous_rate(ee, window[0], window[1] + 0.11, 
+                                                   sampling_period=0.1, kernel_type='gaussian', 
+                                                   kernel_width=0.04) for ee in trial]
+            all_event_list.append(np.array(trial_rates))
 
-    # all_events_stacked = np.vstack(all_event_list)
-    # all_event_mean = pd.DataFrame(np.array(all_event_list).mean(axis=0))
-    # all_event_mean = pd.DataFrame(all_events_stacked)
-    # all_event_mean.columns = np.linspace(window[0], window[1], all_event_mean.shape[1])
-
-    # rate_mat_stacked = gen_firing_rate_matrix(all_event_mean, baseline_dur=baseline_dur,
-    #                                           zscore_flag=False,gaus_std=gaus_std)  # -all_events.values[:,:1000].mean(axis=1,keepdims=True)
-    # ratemat_arr3d = rate_mat_stacked.values.reshape((len(all_event_list), -1, rate_mat_stacked.shape[1]))
     ratemat_arr3d = np.array(all_event_list) if isinstance(all_event_list, list) else all_event_list
     x_ser = np.linspace(window[0], window[1], ratemat_arr3d.shape[-1])
     rate_mat = pd.DataFrame(ratemat_arr3d.mean(axis=0),
                             columns=pd.to_timedelta(x_ser,'s'))
     rate_mat.index = sess_spike_obj.units
-    # rate_mat = rate_mat.assign(m=rate_mat.loc[:,timedelta(0,0):timedelta(0,0.2)].mean(axis=1)
-    #                            ).sort_values('m',ascending=False).drop('m', axis=1)
-    # sorted_arrs = [e.iloc[rate_mat.index.to_series()] for e in all_event_list]
-    # sorted_arrs = all_event_list
-    # rate_mat = rate_mat.sort_values(by=timedelta(0, 0.2), ascending=False
 
     return ratemat_arr3d, rate_mat, rate_mat.index
-
-
