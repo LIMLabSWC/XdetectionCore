@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "XdetectionCore" 
-version = "0.1.5"
+version = "0.1.6"
 description = "Core ephys and behavior processing utilities for the Akrami Lab."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -18,7 +18,9 @@ dependencies = [
     "quantities",
     "neo",
     "elephant",
+    "pytest",
 ]
-
+[project.optional-dependencies]
+test = ["pytest"]
 [tool.setuptools.packages.find]
 where = ["."]

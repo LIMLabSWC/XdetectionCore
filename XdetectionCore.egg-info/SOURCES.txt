@@ -1,3 +1,5 @@
+LICENSE
+README.md
 pyproject.toml
 setup.py
 XdetectionCore.egg-info/PKG-INFO
@@ -5,6 +7,7 @@ XdetectionCore.egg-info/SOURCES.txt
 XdetectionCore.egg-info/dependency_links.txt
 XdetectionCore.egg-info/requires.txt
 XdetectionCore.egg-info/top_level.txt
+tests/test_core.py
 xdetectioncore/__init__.py
 xdetectioncore/behaviour.py
 xdetectioncore/io_utils.py

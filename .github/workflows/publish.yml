@@ -1,0 +1,49 @@
+name: Publish to PyPI
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    name: Run Automated Tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+    
+    - name: Install dependencies
+      run: |
+        pip install "numpy<2" pytest matplotlib pandas scipy
+        pip install -e .
+        
+    - name: Run Pytest
+      run: pytest
+
+  build-n-publish:
+    name: Build and publish to PyPI
+    needs: test # Run tests before publishing
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+        cache: "pip"
+
+    - name: Install build tool
+      run: pip install build
+
+    - name: Build binary wheel and source tarball
+      run: python -m build
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
