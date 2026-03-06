@@ -1,3 +1,4 @@
+from functools import partial
 import json
 import multiprocessing
 from datetime import timedelta
@@ -15,6 +16,16 @@ from .generate_synthetic_spikes import gen_responses
 from ..io_utils import load_spikes
 from typing import Dict, List, Optional, Union
 TrialSelector = Optional[Union[slice, List[int]]]
+
+
+def _worker_process_event(event_time, window, fs, cluster_dict, get_matrix):
+    """
+    Top-level worker function to process a single event time.
+    Returns a tuple of (event_time, spike_times_dict, spike_matrix_df)
+    """
+    spikes = get_spike_times_in_window(event_time, cluster_dict, window, fs)
+    matrix = gen_spike_matrix(spikes, window, fs) if get_matrix else None
+    return event_time, spikes, matrix
 
 def fast_instantaneous_rate(spike_times: np.ndarray, t_start: float, t_stop: float, 
                             sampling_period: float, kernel_type='gaussian', kernel_width=0.04):
@@ -213,7 +224,7 @@ class SessionSpikes:
         else:
             self.good_units = None
             
-        if self.good_units is not None and False:
+        if self.good_units is not None and kwargs.get('subset_good_units', False):
             unit_ids = list(self.cluster_spike_times_dict.keys())
             for unit in unit_ids:
                 if unit not in self.good_units:
@@ -224,8 +235,12 @@ class SessionSpikes:
             
         self.unit_means = self.get_unit_mean_std()
         self.units = list(self.cluster_spike_times_dict.keys())
-        self.event_spike_matrices = multiprocessing.Manager().dict()
-        self.event_cluster_spike_times = multiprocessing.Manager().dict()
+        
+        # self.event_spike_matrices = multiprocessing.Manager().dict()
+        # self.event_cluster_spike_times = multiprocessing.Manager().dict()
+
+        self.event_spike_matrices = {}
+        self.event_cluster_spike_times = {}
 
     def get_sync_events(self,recording_dir, beh_write_data_path:Path):
 
@@ -315,23 +330,40 @@ class SessionSpikes:
 
     def get_event_spikes(self, event_times: (list | np.ndarray | pd.Series), event_name: str,
                          window: (list | np.ndarray), get_spike_matrix=True):
-        if self.event_cluster_spike_times is None:
-            self.event_cluster_spike_times = multiprocessing.Manager().dict()
+        
+        # 1. Identify only the events we haven't processed yet
+        missing_events = [t for t in event_times if f'{event_name}_{t}' not in self.event_cluster_spike_times]
+        
+        if not missing_events:
+            return  # Everything is already cached!
 
-        for event_time in event_times:
-            if f'{event_name}_{event_time}' not in list(self.event_cluster_spike_times.keys()):
-                self.event_cluster_spike_times[f'{event_name}_{event_time}'] = get_spike_times_in_window(event_time,
-                                                                                                         self.cluster_spike_times_dict,
-                                                                                                         window,
-                                                                                                         self.new_fs)
+        # 2. Setup partial function for the pool
+        worker_func = partial(_worker_process_event, 
+                              window=window, 
+                              fs=self.new_fs, 
+                              cluster_dict=self.cluster_spike_times_dict, 
+                              get_matrix=get_spike_matrix)
+
+        # 3. Determine execution strategy
+        # If there are very few events, the numpy logic is so fast that 
+        # spawning new processes will actually slow things down.
+        num_cores = min(multiprocessing.cpu_count(), len(missing_events))
+        
+        if num_cores <= 1 or len(missing_events) < 5:
+            # Run sequentially
+            results = [worker_func(t) for t in missing_events]
+        else:
+            # Run in parallel
+            with multiprocessing.Pool(processes=num_cores) as pool:
+                # chunksize=1 ensures memory isn't hogged by a single worker
+                results = pool.map(worker_func, missing_events, chunksize=1)
+
+        # 4. Update standard dictionaries safely in the main process
+        for event_time, spikes, matrix in results:
+            key = f'{event_name}_{event_time}'
+            self.event_cluster_spike_times[key] = spikes
             if get_spike_matrix:
-                if self.event_spike_matrices is None:
-                    self.event_spike_matrices = multiprocessing.Manager().dict()
-
-                if f'{event_name}_{event_time}' not in list(self.event_spike_matrices.keys()):
-                    self.event_spike_matrices[f'{event_name}_{event_time}'] = gen_spike_matrix(
-                        self.event_cluster_spike_times[f'{event_name}_{event_time}'],
-                        window, self.new_fs)
+                self.event_spike_matrices[key] = matrix
 
     def curate_units(self):
         for unit in self.cluster_spike_times_dict:
