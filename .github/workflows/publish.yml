@@ -25,8 +25,11 @@ jobs:
 
   build-n-publish:
     name: Build and publish to PyPI
-    needs: test # Run tests before publishing
+    needs: test
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/XdetectionCore
     permissions:
       id-token: write
       contents: read
