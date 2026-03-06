@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 from scipy.signal import convolve
 from scipy.signal.windows import gaussian, exponential
-from scipy.ndimage import gaussian_filter1d
 from scipy.stats import zscore
 from tqdm import tqdm
 
@@ -31,28 +30,33 @@ def fast_instantaneous_rate(spike_times: np.ndarray, t_start: float, t_stop: flo
                             sampling_period: float, kernel_type='gaussian', kernel_width=0.04):
     """
     Fast replacement for elephant.statistics.instantaneous_rate.
+    Implements a FORWARD-ONLY (causal) filter.
     """
-    # Create time bins
     bins = np.arange(t_start, t_stop + sampling_period, sampling_period)
-    
-    # Bin spikes (count spikes in each bin)
     counts, _ = np.histogram(spike_times, bins=bins)
-    
-    # Convert counts to firing rate (Hz)
     rate = counts / sampling_period
     
-    # Apply smoothing
     sigma_bins = kernel_width / sampling_period
     
     if kernel_type == 'gaussian':
-        # gaussian_filter1d is highly optimized for 1D arrays
-        smoothed_rate = gaussian_filter1d(rate.astype(float), sigma=sigma_bins, mode='constant', cval=0.0)
+        # Create a half-gaussian (causal)
+        # We generate a full gaussian and take the right side
+        window_size = int(sigma_bins * 5)
+        full_kernel = gaussian(window_size * 2, std=sigma_bins)
+        causal_kernel = full_kernel[window_size:] 
+        causal_kernel /= causal_kernel.sum()
+        
+        # Convolve: only past spikes affect current rate
+        smoothed_rate = convolve(rate, causal_kernel, mode='full')[:len(rate)]
+        
     elif kernel_type == 'exponential':
-        # Create a symmetric exponential kernel approximation
-        window_size = int(sigma_bins * 10) + 1
-        kernel = exponential(window_size, center=(window_size-1)//2, tau=sigma_bins, sym=True)
-        kernel /= kernel.sum()
-        smoothed_rate = convolve(rate, kernel, mode='same')
+        # Exponential is naturally causal if we don't center it
+        window_size = int(sigma_bins * 5)
+        # exponential window: exp(-t / tau)
+        causal_kernel = np.exp(-np.arange(window_size) / sigma_bins)
+        causal_kernel /= causal_kernel.sum()
+        
+        smoothed_rate = convolve(rate, causal_kernel, mode='full')[:len(rate)]
     else:
         smoothed_rate = rate
         
