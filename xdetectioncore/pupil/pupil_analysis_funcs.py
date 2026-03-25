@@ -15,8 +15,8 @@ import platform
 from pathlib import Path
 from tqdm import tqdm
 from scipy.stats import ttest_ind, ttest_1samp
-
-from ..io_utils import posix_from_win, extract_date
+from ..paths import posix_from_win
+from ..io_utils import extract_date
 from ..plotting import format_axis, plot_shaded_error_ts
 from ..stats import save_stats_to_tex
 from ..session import Session
