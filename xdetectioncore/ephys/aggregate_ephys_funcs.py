@@ -17,7 +17,8 @@ from tqdm import tqdm
 from ..behaviour import get_all_cond_filts, get_main_sess_td_df
 from ..session import get_predictor_from_psth
 from ..decoding.decoding_funcs import Decoder
-from ..io_utils import posix_from_win, load_sess_pkl
+from ..paths import posix_from_win
+from ..io_utils import load_sess_pkl
 from ..pupil.pupil_analysis_funcs import process_pupil_td_data
 from ..ephys.spike_time_utils import zscore_by_trial
 
