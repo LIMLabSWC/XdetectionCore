@@ -16,6 +16,7 @@ dependencies = [
     "tqdm",
     "joblib",
     "pytest",
+    "scikit-learn",
 ]
 [project.optional-dependencies]
 test = ["pytest"]
