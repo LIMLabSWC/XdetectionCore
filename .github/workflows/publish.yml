@@ -22,7 +22,7 @@ jobs:
         pip install -e .
         
     - name: Run Pytest
-      run: pytest
+      run: pytest tests
 
     
 
