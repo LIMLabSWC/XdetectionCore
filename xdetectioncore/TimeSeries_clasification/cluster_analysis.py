@@ -2,7 +2,7 @@ import numpy as np
 from mne.stats import permutation_cluster_test
 import matplotlib.pyplot as plt
 
-from plot_funcs import choose_hist_rule
+from ..plotting import choose_hist_rule
 
 
 def cluster_analysis(X1, X2, n_permutations=1000,p_alpha=0.05, **kwargs):
