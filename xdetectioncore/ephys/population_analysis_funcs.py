@@ -10,11 +10,6 @@ from sklearn.cross_decomposition import CCA
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from scipy.ndimage import gaussian_filter1d
-from scipy.spatial.distance import euclidean
-
-from sklearn.model_selection import cross_val_score
-from os import cpu_count
-from itertools import combinations
 
 from ..plotting import plot_ts_var, format_axis, unique_legend
 
