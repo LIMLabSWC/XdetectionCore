@@ -3,6 +3,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch: # Allows you to run this manually for testing
 
 jobs:
   test:
