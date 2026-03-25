@@ -36,7 +36,7 @@ def load_aggregate_td_df(session_topolgy: pd.DataFrame,home_dir:Path,td_df_query
 
     # td_dfs = {sessname:pd.read_csv(abs_td_path) for sessname, abs_td_path in zip(sessnames,abs_td_paths)
     #           if abs_td_path.is_file()}
-    td_df = pd.concat(list(td_dfs.values()),keys=td_dfs.keys(),names=['sess'],axis=0)
+    td_df = pd.concat(list(td_dfs.values()),axis=0)
     if td_df_query:
         td_df = td_df.query(td_df_query)
     return td_df
@@ -624,6 +624,20 @@ def get_main_sess_td_df(_name=None, _date=None, _main_sess_td_name=None, _home_d
     except pd.errors.EmptyDataError:
         main_sess_td = pd.DataFrame()
 
+    _date = extract_date(abs_td_path.stem)
+    _name = abs_td_path.stem.split('_')[0]
+    main_sess_td['date'] = _date
+    main_sess_td['name'] = _name
+    main_sess_td['sess'] = f'{_name}_{_date}'
+    # set a multiindex of name, date, sess and trial num
+    main_sess_td.index = pd.MultiIndex.from_arrays([[main_sess_td['name'].iloc[0]]*len(main_sess_td),
+                                                   [main_sess_td['date'].iloc[0]]*len(main_sess_td),
+                                                   [main_sess_td['sess'].iloc[0]]*len(main_sess_td),
+                                                   main_sess_td.reset_index().index+1],
+                                                  names=['name','date','sess','trial_num'])
+    
+    print('LOADED AND FORMATTED TD DF')
+    
     times2process = ['Trial_Start', 'ToneTime', 'Trial_End', 'Gap_Time','Bonsai_Time']
 
     [add_datetimecol(main_sess_td, col) for col in times2process
