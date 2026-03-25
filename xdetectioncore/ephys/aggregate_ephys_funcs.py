@@ -14,17 +14,16 @@ from sklearn.metrics import ConfusionMatrixDisplay
 from tqdm import tqdm
 
 
-from ..behaviour import get_all_cond_filts
+from ..behaviour import get_all_cond_filts, get_main_sess_td_df
 from ..session import get_predictor_from_psth
-from ..decoding import Decoder
+from ..decoding.decoding_funcs import Decoder
 from ..io_utils import posix_from_win, load_sess_pkl
 from ..pupil.pupil_analysis_funcs import process_pupil_td_data
 from ..ephys.spike_time_utils import zscore_by_trial
 
 
 def load_aggregate_td_df(session_topolgy: pd.DataFrame,home_dir:Path,td_df_query=None) -> pd.DataFrame:
-    from behviour_analysis_funcs import get_main_sess_td_df
-    # get main sess pattern
+
     td_path_pattern = 'data/Dammy/<name>/TrialData'
     if 'tdata_file' not in session_topolgy.columns:
         td_paths = [Path(sess_info['sound_bin'].replace('_SoundData', '_TrialData')).with_suffix('.csv').name
