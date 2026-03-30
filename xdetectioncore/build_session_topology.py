@@ -107,7 +107,7 @@ if __name__ == '__main__':
         'DO': 'Dammy',
         'RS': 'Ryan',
         'LP': 'Lida',
-        'JW': 'JungWoo'
+        'JK': 'JungWoo'
     }
 
     match_roots = {'videos_dir': ceph_dir / posix_from_win(r'X:\Dammy\mouse_pupillometry\mouse_hf'),
