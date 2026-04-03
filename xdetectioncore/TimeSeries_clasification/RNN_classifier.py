@@ -103,7 +103,7 @@ def train_model(X, y, epochs=50):
 
 
     fig.tight_layout()
-    fig.show()
+    # fig.show()
 
 
     return model

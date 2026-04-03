@@ -241,7 +241,7 @@ class Session:
         self.get_n_since_last()
         self.get_local_rate()
         sessname = self.sessname
-        name, date = sessname.split('_')
+        name, date = sessname.split('_')[:2]
         if not date.isnumeric():
             date = date[:-1]
 

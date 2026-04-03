@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import joblib
 import pickle
@@ -222,3 +224,48 @@ def sync_using_latest_ttl(sink_events, sink_ttls, source_ttls):
     print(f'1 s in source TTL clock = {(sink_ttls[-1]-sink_ttls[0])/(source_ttls[-1]-source_ttls[0]):.6f} s')
     # Apply correction
     return sink_events - offset
+
+class LazyPupilLoader:
+    def __init__(self, store_path: Path):
+        self.store_path = Path(store_path)
+        self.available_keys = self._get_keys()
+
+    def _get_keys(self):
+        if not self.store_path.exists():
+            return []
+        # Derives keys from folder names: session_id=NAME
+        return [d.name.split('=')[1] for d in self.store_path.glob('session_id=*')]
+
+    def __getitem__(self, key):
+        """Returns an object with a .pupildf attribute"""
+        if key not in self.available_keys:
+            raise KeyError(f"Session {key} not found.")
+        
+        # 1. Load the actual DataFrame
+        df = pd.read_parquet(
+            self.store_path, 
+            filters=[('session_id', '==', key)],
+            engine='pyarrow'
+        )
+        
+        # 2. Wrap it in an object so you can call .pupildf
+        # SimpleNamespace is a flexible object that allows dot notation
+        return SimpleNamespace(pupildf=df)
+
+    def keys(self):
+        return self.available_keys
+    
+
+def load_pupil_sess_lazy(store_path: Path):
+    """
+    Replaces the original pickle load.
+    Returns a lazy-loading proxy instead of a full dictionary.
+    """
+    store_path = Path(store_path).with_suffix('')  # Ensure we point to the folder
+
+    if store_path.is_dir():
+        print(f"Initializing lazy loader for Parquet store at {store_path}")
+        return LazyPupilLoader(store_path)
+    else:
+        print(f"Store {store_path} not found. Returning empty dict.")
+        return {}

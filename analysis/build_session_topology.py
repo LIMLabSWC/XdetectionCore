@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import re
 import yaml
@@ -7,7 +8,7 @@ from argparse import ArgumentParser
 
 from tqdm import tqdm
 
-from .paths import posix_from_win
+from xdetectioncore.paths import posix_from_win
 
 
 def extract_suffix(filename: str) -> int:
@@ -29,7 +30,7 @@ def validate_sequence(suffixes: list[int], animal: str, date: str):
         print(f"![Sequence Gap] {animal} on {date}: Missing suffixes {missing}")
 
     if min(suffixes) != 0:
-        print(f"![Sequence Note] {animal} on {date}: Sequence starts at {min(suffixes)} instead of 000")
+        print(f"![Sequence Note] {animal} on {date}: Sequence starts at {min(suffixes):03d} instead of 000")
 
 
 def get_animal_topology(animal, tdata_root, match_roots):
@@ -38,6 +39,7 @@ def get_animal_topology(animal, tdata_root, match_roots):
 
     # Group by date to validate sequences per day
     date_groups = {}
+    assert all([len(list(set(fps))) == len(fps) for fps in date_groups.values()])
     for f in all_tdata:
         suffix = extract_suffix(f.name)
         if suffix is None: continue  # Ignore files without _00X
@@ -49,9 +51,11 @@ def get_animal_topology(animal, tdata_root, match_roots):
         date_groups.setdefault(date, []).append((suffix, f))
 
     topology_rows = []
-
+    assert len(date_groups) == len(set(date_groups.keys()))
     for date, files in date_groups.items():
         # Validate the sequence for this day
+        if len(files)>1:
+            pass
         suffixes = [f[0] for f in files]
         validate_sequence(suffixes, animal, date)
 
@@ -74,6 +78,8 @@ def get_animal_topology(animal, tdata_root, match_roots):
                     pattern = f"*{animal}*{date}*_{suffix_str}*"
 
                 matches = [c for c in root.glob(pattern) if extract_suffix(c.name) == suffix]
+                if len(matches) > 1:
+                    print(f"![Duplicate File] {animal} on {date}: {label} {suffix_str}: {matches}")
 
                 if len(matches) == 1:
                     row[label] = matches[0]
@@ -84,6 +90,30 @@ def get_animal_topology(animal, tdata_root, match_roots):
             topology_rows.append(row)
 
     return topology_rows
+
+
+def add_stage_info(session_topology):
+
+    for idx, row in session_topology.iterrows():
+        td_path = row['tdata_file']
+        if td_path is None:
+            session_topology.loc[idx, 'Stage'] = None
+            continue
+
+        td_df = pd.read_csv(td_path)
+        if 'Stage' in td_df.columns:
+            session_topology.loc[idx, 'Stage'] = td_df['Stage'].iloc[0]
+        else:
+            session_topology.loc[idx, 'Stage'] = None
+    session_topology['Stage'] = session_topology['Stage'].astype(int, errors='ignore')
+
+def add_sess_order_info(session_topology):
+    for idx, row in session_topology.iterrows():
+        td_path = row['tdata_file']
+        if td_path is None:
+            session_topology.loc[idx, 'sess_order'] = None
+        else:
+            session_topology.loc[idx, 'sess_order'] = 'main'
 
 
 if __name__ == '__main__':
@@ -107,7 +137,7 @@ if __name__ == '__main__':
         'DO': 'Dammy',
         'RS': 'Ryan',
         'LP': 'Lida',
-        'JW': 'JungWoo'
+        'JK': 'JungWoo'
     }
 
     match_roots = {'videos_dir': ceph_dir / posix_from_win(r'X:\Dammy\mouse_pupillometry\mouse_hf'),
@@ -116,6 +146,7 @@ if __name__ == '__main__':
 
     all_data = []
     animals = args.animals.split(',')
+    assert len(animals) == len(set(animals)), 'Animal names must be unique'
     for animal in tqdm(animals,total=len(animals),desc='Processing animals'):
         exp_name = exp_name_dict.get(animal[:2])
 
@@ -125,4 +156,6 @@ if __name__ == '__main__':
     csv_path = projectdir / f'session_topology{f"_{args.sess_top_suffix}" if args.sess_top_suffix else ""}.csv'
 
     df = pd.DataFrame(all_data)
+    add_stage_info(df)
+    add_sess_order_info(df)
     df.to_csv(csv_path, index=False)

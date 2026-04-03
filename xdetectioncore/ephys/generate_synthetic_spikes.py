@@ -108,7 +108,7 @@ if __name__ == '__main__':
     spike_plot[1].set_ylabel('rate (Hz)')
     spike_plot[1].set_xlabel('time (s)')
     raster_plot_multi(synth_times[1], spike_plot[1])
-    plt.show()
+    # plt.show()
     #
     # units_max_rates = np.random.rand(10) * max_rate
     # plt.plot(time,rate_ts)

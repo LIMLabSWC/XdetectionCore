@@ -1,4 +1,3 @@
-# matplotlib.use('TkAgg')
 from collections import defaultdict
 
 import numpy as np
@@ -181,7 +180,7 @@ class PopPCA:
         [row_axes[0].legend(loc='upper center', ncol=4) for row_axes in self.pca_ts_plot[1].T]
         # [ax.legend() for ax in self.pca_ts_plot[1]]
         [ax.set_xlabel('Time from stimulus onset (s)') for ax in self.pca_ts_plot[1][-1]]
-        self.pca_ts_plot[0].show()
+        # self.pca_ts_plot[0].show()
 
     def scatter_pca_points(self, prop: str, t_s: list, x_ser: np.ndarray, **kwargs):
         import numpy as np
@@ -344,7 +343,7 @@ class PopPCA:
 
         self.proj_3d_plot = (fig, axes)
         fig.tight_layout()
-        fig.show()
+        # fig.show()
         return fig, axes
 
     def plot_3d_pca_ts(self, prop, event_window, **kwargs):
@@ -532,7 +531,7 @@ class PopPCA:
             ax.set_yticks([])
             ax.set_zticks([])
 
-        fig.show()
+        # fig.show()
         self.proj_3d_plot = (fig, ax)
         return fig, ax
 
@@ -684,7 +683,7 @@ class PopPCA:
         fig.tight_layout()
 
         self.pca_ts_plot = (fig, ax)
-        fig.show()
+        # fig.show()
         return fig, ax
 
     
@@ -862,7 +861,7 @@ class PopPCA:
         ax.set_title(f'PC: {pca_comps_2plot}')
         fig.tight_layout()
         self.proj_2d_plot = (fig, ax)
-        fig.show()
+        # fig.show()
         return fig, ax
 
     def pcspace_distances(

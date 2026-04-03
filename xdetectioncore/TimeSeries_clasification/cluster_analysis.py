@@ -102,7 +102,7 @@ def plot_cluster_stats(cluster_mass, shuff_cluster_mass,plot=None, plot_kwargs=N
     ax.locator_params(axis='y', nbins=3)
     # ax.locator_params(axis='x', nbins=4)
     fig.tight_layout()
-    fig.show()
+    # fig.show()
 
     return fig, ax
 

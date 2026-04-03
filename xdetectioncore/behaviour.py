@@ -269,7 +269,7 @@ def get_all_cond_filts():
 def group_td_df_across_sessions(sessions_objs:dict,sessnames:list) -> pd.DataFrame:
     all_td_df = []
     for sessname in sessnames:
-        name,date = sessname.split('_')
+        name,date = sessname.split('_')[:2]
         if not date.isnumeric():
             date=date[:-1]
         if not sessions_objs[sessname].__class__.__name__ == 'Session':

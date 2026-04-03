@@ -1147,7 +1147,7 @@ def run_pupil_cond_analysis(
         analysis.plots['ts_by_cond'][1].get_legend().remove()
     analysis.plots['ts_by_cond'][0].set_size_inches(*figsize)
 
-    analysis.plots['ts_by_cond'][0].show()
+    # analysis.plots['ts_by_cond'][0].show()
     # format_axis(analysis.plots['max_diff'][1])
     # analysis.plots['max_diff'][0].show()
     analysis.plots['ts_by_cond'][0].savefig(figdir / fig_savename)
