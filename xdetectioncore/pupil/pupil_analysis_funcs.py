@@ -43,9 +43,6 @@ def group_pupil_across_sessions(sess_dict_objs: dict,sessnames:list,event:str, c
             responses = sess_dict_objs[sessname].pupil_obj.aligned_pupil[event]
             trial_nums = sess_dict_objs[sessname].td_df.query(cond_filter).index.get_level_values('trial_num').values
             cond_pupil = responses.loc[responses.index.isin(trial_nums, level='trial')]
-            # if sessname=='DO79_240118':
-            #     print(sessname,event,cond_name,cond_filter,cond_pupil.shape)
-            # cond_pupil = sess_dict_objs[sessname].pupil_obj.aligned_pupil[event].query('trial in @trial_nums')
         else:
             try:
                 cond_pupil = sess_dict_objs[sessname].pupil_obj.aligned_pupil[event]
@@ -54,10 +51,7 @@ def group_pupil_across_sessions(sess_dict_objs: dict,sessnames:list,event:str, c
                 continue
         all_cond_pupil.append(cond_pupil)
     cond_pupil_df = pd.concat(all_cond_pupil, axis=0)
-    # cond_pupil_df['name'] = cond_pupil_df.index.get_level_values('sess').str.split('_').str[0]
-    # cond_pupil_df['date'] = cond_pupil_df.index.get_level_values('sess').str.split('_').str[1]
-    # # add name and date to multiindex
-    # cond_pupil_df.set_index(['name', 'date'], append=True, inplace=True)
+
 
     return cond_pupil_df
 
@@ -96,8 +90,6 @@ def plot_pupil_diff_across_sessions(cond_list, event_responses, sess_drug_types,
 
     plot[1].plot(response_diff_df_subset.columns,mean_response, **plt_kwargs)
 
-    # plot_ts_var(response_diff_df_subset.columns, response_diff_df_subset.values, plt_kwargs['c'], plot[1],
-    #             ci_kwargs={'var_func': sem, 'confidence': 0.99})
     plot[1].fill_between(response_diff_df_subset.columns, mean_response - response_diff_df_subset.sem(axis=0),
                          mean_response + response_diff_df_subset.sem(axis=0),
                          color=plt_kwargs.get('c','k'), alpha=0.1)
@@ -143,36 +135,13 @@ def plot_pupil_ts_by_cond(responses_by_cond:dict, conditions, plot=None, sess_li
                                   **cond_line_kwargs[cond] if cond_line_kwargs else {})
             # plot sems
             if len(mean_responses_by_sess) > 1:
-                # sem over sess_dict
-                # pupil_ts_plot[1].fill_between(x_ser,
-                                            #   np.array(mean_responses_by_sess.mean(axis=0) - mean_responses_by_sess.sem(axis=0)),
-                                            #   np.array(mean_responses_by_sess.mean(axis=0) + mean_responses_by_sess.sem(axis=0)),
-                                            #   fc=cond_line_kwargs[cond]['c'] if cond_line_kwargs else f'C{len(pupil_ts_plot[1].lines) - 1}',
-                                            #   alpha=0.1)
+
                 plot_shaded_error_ts(pupil_ts_plot[1],x_ser, mean_responses_by_sess.mean(axis=0).values,mean_responses_by_sess.sem(axis=0).values,
                                      fc=cond_line_kwargs[cond]['c'] if cond_line_kwargs else f'C{cond_i}',alpha=0.1)
                 
             else:
-
-                # bootstrap ci for one session
-                # plot_ts_var(x_ser, responses_by_cond[cond].xs(sess_list[0],level='sess').values,
-                #             colour=cond_line_kwargs[cond]['c'] if cond_line_kwargs else f'C{cond_i}',plt_ax=pupil_ts_plot[1])
-                # sess_bootstrap = np.array(np.array([[sess_responses[idxs,t].mean() for idxs in
-                #                           [np.random.choice(sess_responses.shape[0],sess_responses.shape[0],
-                #                                             replace=True) for _ in range(1000)]]
-                #                             for t in range(x_ser.shape[0])])).T
-                # print(sess_bootstrap.shape)
-                # pupil_ts_plot[1].fill_between(x_ser,
-                #                               np.quantile(sess_bootstrap, 0.025,axis=0),
-                #                               np.quantile(sess_bootstrap, 0.975,axis=0),
-                #                               fc=cond_line_kwargs[cond]['c'] if cond_line_kwargs else f'C{cond_i}',
-                #                               alpha=0.1)
                 sess_sem = responses_by_cond[cond].xs(sess_list[0], level=group_name).sem(axis=0)
-                # pupil_ts_plot[1].fill_between(x_ser.tolist(),
-                                            #   mean_responses_by_sess.mean(axis=0) - sess_sem,
-                                            #   mean_responses_by_sess.mean(axis=0) + sess_sem,
-                                            #   fc=cond_line_kwargs[cond]['c'] if cond_line_kwargs else f'C{cond_i}',
-                                            #   alpha=0.1)
+
                 plot_shaded_error_ts(pupil_ts_plot[1],x_ser, mean_responses_by_sess.mean(axis=0).values,sess_sem.values,
                                      fc=cond_line_kwargs[cond]['c'] if cond_line_kwargs else f'C{cond_i}',alpha=0.1)
 
@@ -180,7 +149,6 @@ def plot_pupil_ts_by_cond(responses_by_cond:dict, conditions, plot=None, sess_li
     pupil_ts_plot[1].set_title('Pupil response')
     pupil_ts_plot[1].legend()
     pupil_ts_plot[0].set_layout_engine('tight')
-    # pupil_ts_plot[0].show()
 
     if plot is None:
         return pupil_ts_plot
@@ -255,11 +223,6 @@ def plot_pupil_diff_ts_by_cond(responses_by_cond: dict, conditions, plot=None, s
     pupil_diff_ts_plot[1].set_xlabel(plot_kwargs.get('xlabel', 'Time'))
     pupil_diff_ts_plot[1].set_ylabel(plot_kwargs.get('ylabel', f'Difference ({conditions[0]} - {conditions[1]})'))
 
-    # # Add shaded regions
-    # for t in np.arange(0, 1, 0.25):
-    #     pupil_diff_ts_plot[1].axvspan(t, t + 0.15, fc='grey', alpha=0.1)
-
-    # Tight layout and show plot
     plt.tight_layout()
     # plt.show()
 
@@ -577,11 +540,7 @@ def plot_pupil_diff_max_by_cond(responses_by_cond: dict,
 
     return (fig, ax), [list(max_diffs_by_group.values()),
                        list(max_diffs_by_group_shuffled.values()) if max_diffs_by_group_shuffled else []]
-    # if plot is None:
-    #     return (fig, ax), [list(max_diffs_by_group.values()),
-    #                        list(max_diffs_by_group_shuffled.values()) if max_diffs_by_group_shuffled else []]
-    # else:
-    #     return list(max_diffs_by_group.values())
+
 
 
 
@@ -591,28 +550,6 @@ def save_responses_dicts(response_dict:dict, save_path:Path):
         pkl_dir.mkdir()
     with open(save_path, 'wb') as file:
         pickle.dump(response_dict, file)
-
-
-def load_pupil_sess_pkl(pupil_sess_pkl_path:Path):
-    if pupil_sess_pkl_path.is_file():
-        print(f'loading session pickle')
-        sys_os = platform.system().lower()
-        if sys_os == 'windows':
-            import pathlib
-
-            temp = pathlib.PosixPath
-            pathlib.PosixPath = pathlib.WindowsPath
-        if sys_os == 'linux':
-            import pathlib
-
-            temp = pathlib.WindowsPath
-            pathlib.WindowsPath = pathlib.PosixPath
-
-        sess_dict_dict = joblib.load(pupil_sess_pkl_path)
-    else:
-        sess_dict_dict = {}
-
-    return sess_dict_dict
 
 
 def init_pupil_td_obj(sess_dict: dict, sessname: str, ceph_dir:Path, all_sess_info:pd.DataFrame, td_path_pattern:str, home_dir:Path):
@@ -763,36 +700,6 @@ def add_early_late_to_by_cond(
         by_cond_dict[cond_key] = group_pupil_across_sessions(
             sess_dict, list(sess_dict.keys()), event, cond_key, td_df_query=query
         )
-
-def get_sliding_window_max(
-    responses_by_cond: dict,
-    conditions: list,
-    td_df_query_template: str,
-    trial_window_size: int,
-    trial_stop: int,
-    window_by_stim: tuple = (1.5, 2.5),
-    mean_func=np.max,
-    ):
-
-    """ subsets responses by interatively adjusting query to get max over slinding window of trials. 
-
-    """
-    # Initialize a dictionary to hold the results
-    sliding_window_max_mean = {cond: [] for cond in conditions}
-    for cond in conditions:
-        if cond not in responses_by_cond:
-            raise ValueError(f"Condition {cond} not found in responses_by_cond.")
-        cond_responses = responses_by_cond[cond]
-        query_strings = [td_df_query_template.format(col=cond, start_i=start_i, end_i=start_i + trial_window_size)
-                         for start_i in range(0, trial_stop, trial_window_size)]
-        for query in query_strings:
-            _df = cond_responses.query(query)
-            # group by session and name
-            _df = _df.groupby(['sess', 'name']).mean()
-            if _df.empty:
-                continue
-            # Get the max over the specified window
-            max_values = _df.loc[:, window_by_stim[0]:window_by_stim[1]].apply(mean_func, axis=1)
 
 
 class PupilCondAnalysis:
@@ -1037,7 +944,7 @@ class PupilCondAnalysis:
         """
         Save ttest result to a .tex file using save_stats_to_tex from save_utils.
         """
-        from save_utils import save_stats_to_tex
+        from ..stats import save_stats_to_tex
         save_stats_to_tex(ttest_result, tex_path)
 
 
