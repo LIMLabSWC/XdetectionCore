@@ -1,3 +1,4 @@
+from collections import defaultdict
 from types import SimpleNamespace
 
 import numpy as np
@@ -269,3 +270,29 @@ def load_pupil_sess_lazy(store_path: Path):
     else:
         print(f"Store {store_path} not found. Returning empty dict.")
         return {}
+
+
+def save_response_dfs(response_dfs: dict, save_path: Path):
+    """
+    Saves response DataFrames to a Parquet store.
+
+    :param response_dfs: Dictionary of DataFrames to save, keyed by session_id
+    :param save_path: Path to the Hdf file
+    """
+    with pd.HDFStore(save_path, mode="w") as store:
+        for key, df in response_dfs.items():
+            store.put(key, df, format="table")
+            
+
+def load_response_dfs(save_path: Path) -> defaultdict[str, pd.DataFrame]:
+    """
+    Loads response DataFrames from a Parquet store.
+
+    :param save_path: Path to the Hdf file
+    :return: Dictionary of DataFrames, keyed by session_id
+    """
+    response_dfs = defaultdict(pd.DataFrame)
+    with pd.HDFStore(save_path, mode="r") as store:
+        for key in store.keys():
+            response_dfs[key.strip('/')] = store.get(key)
+    return response_dfs
