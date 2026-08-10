@@ -15,7 +15,7 @@ def apply_style():
     plt.style.use(style_path)
 
 def plot_spike_time_raster(spike_time_dict: dict, ax=None, **pltkwargs):
-    if not ax:
+    if ax is None:
         fig, ax = plt.subplots()
     assert isinstance(ax, plt.Axes)
     for cluster_id in tqdm(spike_time_dict, desc='plotting spike times for event', total=len(spike_time_dict),
@@ -24,7 +24,7 @@ def plot_spike_time_raster(spike_time_dict: dict, ax=None, **pltkwargs):
         ax.invert_xaxis()
 
 
-def unique_legend(plotfig:(plt.figure().figure,list,tuple),**leg_kwargs):
+def unique_legend(plotfig: plt.Figure | list | tuple, **leg_kwargs):
     if isinstance(plotfig,(tuple,list)):
         if isinstance(plotfig[1],np.ndarray):
             plotaxes2use = plotfig[1].flatten()
@@ -618,3 +618,74 @@ def choose_hist_rule(x, *, discrete_hint=None):
 
     # near-normal, continuous
     return 'scott'
+
+def set_nested_xlabels(
+    ax,
+    level1_labels,
+    level2_groups,
+    x_positions=None,
+    y_offset=-0.22,
+    level1_fontsize=12,
+    level2_fontsize=14,
+    **text_kwargs
+):
+    """
+    Sets 2-level hierarchical x-axis labels on a Matplotlib Axes object.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The target axis to modify.
+    level1_labels : list of str
+        Labels for individual tick positions (e.g., ['Frequent', 'Rare', 'Frequent', 'Rare']).
+    level2_groups : dict or list of tuples
+        Mapping of group label to its item indices (or x-positions).
+        Examples:
+            - dict: {'Control': [0, 1], 'Muscimol': [2, 3]}
+            - list of tuples: [('Control', [0, 1]), ('Muscimol', [2, 3])]
+    x_positions : list or array-like, optional
+        X-coordinates for the 1st-level ticks. Defaults to range(len(level1_labels)).
+    y_offset : float, optional
+        Vertical position for 2nd-level labels in relative Axes coordinates (default: -0.22).
+    level1_fontsize : int, optional
+        Font size for 1st-level tick labels.
+    level2_fontsize : int, optional
+        Font size for 2nd-level group labels.
+    **text_kwargs :
+        Additional keyword arguments passed to ax.text() for 2nd-level labels.
+    """
+    if x_positions is None:
+        x_positions = list(range(len(level1_labels)))
+
+    # 1. Apply Level 1 Ticks & Labels
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(level1_labels, fontsize=level1_fontsize)
+
+    # Normalize dict or list of tuples into an iterable of (group_name, indices)
+    if isinstance(level2_groups, dict):
+        groups = level2_groups.items()
+    else:
+        groups = level2_groups
+
+    # 2. Add Level 2 Group Labels
+    for group_name, indices in groups:
+        # Convert index list to actual x-coordinates if valid indices are provided
+        x_coords = [
+            x_positions[idx] if isinstance(idx, int) and idx < len(x_positions) else idx
+            for idx in indices
+        ]
+        
+        # Calculate horizontal center of the group
+        x_center = sum(x_coords) / len(x_coords)
+
+        # Place text using blended transform (X in Data coords, Y in Axes coords)
+        ax.text(
+            x_center,
+            y_offset,
+            group_name,
+            ha='center',
+            va='top',
+            fontsize=level2_fontsize,
+            transform=ax.get_xaxis_transform(),
+            **text_kwargs
+        )
