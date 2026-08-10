@@ -77,7 +77,8 @@ def get_animal_topology(animal, tdata_root, match_roots):
                 else:
                     pattern = f"*{animal}*{date}*_{suffix_str}*"
 
-                matches = [c for c in root.glob(pattern) if extract_suffix(c.name) == suffix]
+                matches = [c for c in root.glob(pattern) if extract_suffix(c.name) == suffix
+                           if all([e not in c.name for e in ['_temp', '_backup','(',')']])]
                 if len(matches) > 1:
                     print(f"![Duplicate File] {animal} on {date}: {label} {suffix_str}: {matches}")
 
@@ -137,7 +138,8 @@ if __name__ == '__main__':
         'DO': 'Dammy',
         'RS': 'Ryan',
         'LP': 'Lida',
-        'JK': 'JungWoo'
+        'JK': 'JungWoo',
+        'NA': 'Naira'
     }
 
     match_roots = {'videos_dir': ceph_dir / posix_from_win(r'X:\Dammy\mouse_pupillometry\mouse_hf'),
