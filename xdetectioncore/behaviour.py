@@ -33,12 +33,65 @@ def load_aggregate_td_df(session_topolgy: pd.DataFrame,home_dir:Path,td_df_query
               for sessname, abs_td_path in tqdm(zip(sessnames, abs_td_paths),total=len(abs_td_paths),desc='loading td dfs')
               if abs_td_path is not None
               }
+    td_dfs = {sessname: format_td_df(td_df, sessname) for sessname, td_df in td_dfs.items() if td_df is not None and not td_df.empty}
 
     # td_dfs = {sessname:pd.read_csv(abs_td_path) for sessname, abs_td_path in zip(sessnames,abs_td_paths)
     #           if abs_td_path.is_file()}
     td_df = pd.concat(list(td_dfs.values()),axis=0)
     if td_df_query:
         td_df = td_df.query(td_df_query)
+    return td_df
+
+def format_td_df(td_df:pd.DataFrame, sessname:str) -> pd.DataFrame:
+
+    # tddir_path = posix_from_win(tddir_path)
+    # td_path = Path(td_home)/tddir_path/tdfile_path
+
+    name, date = sessname.split('_')[:2]
+    if not date.isnumeric():
+        date = date[:-1]
+
+    if 'Session_Block' not in td_df.columns:
+        if 'WarmUp' not in td_df.columns:
+            td_df['WarmUp'] = np.full_like(td_df.index, False)
+        first_dev_trial = td_df.query('Pattern_Type != 0').index[0] if len(td_df.query('Pattern_Type != 0'))>0 else td_df.shape[0]
+        if 'Stage' not in td_df.columns:
+            if len(td_df['Pattern_Type'].unique())>1:
+                td_df['Stage'] = 3
+            else:
+                td_df['Stage'] = 4
+        sess_block = [-1 if r['WarmUp'] else 0 if r['Stage'] <= 3 else 2 if r['Stage']==4 and idx<first_dev_trial
+                        else 3 if r['Stage']==4 and idx>=first_dev_trial else 0 for idx, r in td_df.iterrows()]
+        td_df['Session_Block'] = sess_block
+
+    td_df = get_local_rate(td_df)
+    td_df = get_n_since_last_patt(td_df)
+    td_df = td_df.rename(columns={'n_since_last_Tone_Position':'n_since_last'})
+
+    # td_df.index = pd.MultiIndex.from_arrays(
+    #     [[sessname] * len(td_df), [name] * len(td_df), [date] * len(td_df),
+    #         td_df.reset_index().index+1],
+    #     names=['sess', 'name', 'date', 'trial_num'])
+    
+    return td_df
+
+def get_n_since_last_patt(td_df:pd.DataFrame) -> pd.DataFrame:
+    pattern_trials = td_df.loc[td_df['Tone_Position'] == 0]
+    if pattern_trials.empty:
+        td_df['n_since_last'] = np.full_like(td_df.index, np.nan)
+        return td_df
+    trial_nums = pattern_trials.index.get_level_values('trial_num')
+    pattern_trial_num_dff = np.mat(trial_nums.values).T - trial_nums.values
+    pattern_trial_num_dff[pattern_trial_num_dff <= 0] = 9999
+    n_since_last = np.min(pattern_trial_num_dff, axis=1)
+    n_since_last[0] = trial_nums[0]  # for the first pattern trial, n_since_last is the trial number itself
+    # Fill n_since_last for non-pattern trials with ascending numbers until the next pattern trial
+    
+    td_df.loc[pattern_trials.index,'n_since_last'] = n_since_last
+    return td_df
+
+def get_local_rate(td_df: pd.DataFrame, window=10) -> pd.DataFrame:
+    td_df['local_rate'] = td_df['Tone_Position'].rolling(window=window).mean()
     return td_df
 
 def format_sound_writes(sound_writes_df: pd.DataFrame, patterns: list[int, ],normal_patterns=None,
@@ -288,15 +341,11 @@ def group_td_df_across_sessions(sessions_objs:dict,sessnames:list) -> pd.DataFra
     return pd.concat(all_td_df,axis=0)
 
 
-def get_n_since_last(td_df:pd.DataFrame,col_name:str,val):
-    # idxs = td_df.index
-    # td_df[f'n_since_last_{col_name}'] = np.arange(td_df.shape[0])
-    # since_last = td_df.query(f'{col_name} == @val').index
-    # if not since_last.empty:
-    #     for t, tt in zip(since_last, np.pad(since_last, [1, 0])):
-    #         td_df.loc[idxs[tt] + 1:idxs[t], f'n_since_last_{col_name}'] = td_df.loc[idxs[tt] + 1:idxs[t], f'n_since_last_{col_name}'] - tt
-    #     td_df.loc[idxs[t] + 1:, f'n_since_last_{col_name}'] = td_df.loc[idxs[t] + 1:, f'n_since_last_{col_name}'] - t
+def get_n_since_last(td_df:pd.DataFrame,col_name:str,val) -> pd.DataFrame:
+
     td_df[f'n_since_last_{col_name}'] = calculate_true_streak(td_df[col_name] == val)
+
+    return td_df
 
 
 def vec_dt_replace(series, year=None, month=None, day=None,
@@ -465,8 +514,6 @@ def get_last_pattern(tone_pos_bool_ser:pd.Series):
     return streak_array  # pd.Series(streak_array, index=boolean_series.index)
 
 
-
-
 def get_earlyX_trials(td_df):
     assert all([col in td_df.columns for col in ['Gap_Time_dt','ToneTime_dt']]), \
         'td_df must have Gap_Time_dt and ToneTime_dt columns'
@@ -624,20 +671,19 @@ def get_main_sess_td_df(_name=None, _date=None, _main_sess_td_name=None, _home_d
     except pd.errors.EmptyDataError:
         main_sess_td = pd.DataFrame()
 
+    if main_sess_td.empty:
+        return main_sess_td, abs_td_path
+
     _date = extract_date(abs_td_path.stem)
     _name = abs_td_path.stem.split('_')[0]
-    main_sess_td['date'] = _date
-    main_sess_td['name'] = _name
-    main_sess_td['sess'] = f'{_name}_{_date}'
+
     # set a multiindex of name, date, sess and trial num
-    main_sess_td.index = pd.MultiIndex.from_arrays([[main_sess_td['name'].iloc[0]]*len(main_sess_td),
-                                                   [main_sess_td['date'].iloc[0]]*len(main_sess_td),
-                                                   [main_sess_td['sess'].iloc[0]]*len(main_sess_td),
+    main_sess_td.index = pd.MultiIndex.from_arrays([[_name]*len(main_sess_td),
+                                                   [_date]*len(main_sess_td),
+                                                   [f'{_name}_{_date}']*len(main_sess_td),
                                                    main_sess_td.reset_index().index+1],
                                                   names=['name','date','sess','trial_num'])
-    
-    print('LOADED AND FORMATTED TD DF')
-    
+        
     times2process = ['Trial_Start', 'ToneTime', 'Trial_End', 'Gap_Time','Bonsai_Time']
 
     [add_datetimecol(main_sess_td, col) for col in times2process
