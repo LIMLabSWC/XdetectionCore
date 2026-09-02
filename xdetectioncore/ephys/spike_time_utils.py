@@ -6,6 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import polars as pl
+import duckdb
+
 from scipy.signal import convolve
 from scipy.signal.windows import gaussian, exponential
 from scipy.stats import zscore
@@ -136,6 +139,49 @@ def gen_firing_rate_matrix(spike_matrix: pd.DataFrame, bin_dur=0.01, baseline_du
     rate_matrix = rate_matrix.fillna(0)
     return rate_matrix
 
+
+### Implementation with polars ###
+
+def align_spikes_to_events(spikes_path: Path, events_path: Path, 
+                           event_name: str, window: tuple, sessions: list = None):
+    """
+    Ultra-fast alignment of spikes to events across multiple sessions.
+    Returns a Polars DataFrame of (session_id, trial_num, cluster_id, relative_time).
+    """
+    # 1. Lazily scan the Parquet files (does not load into RAM yet)
+    spikes_lf = pl.scan_parquet(spikes_path / "session_id=*/*.parquet")
+    events_lf = pl.scan_parquet(events_path / "session_id=*/*.parquet")
+    
+    # 2. Filter for specific sessions and events
+    if sessions:
+        spikes_lf = spikes_lf.filter(pl.col("session_id").is_in(sessions))
+        events_lf = events_lf.filter(pl.col("session_id").is_in(sessions))
+        
+    events_lf = events_lf.filter(pl.col("event_name") == event_name)
+
+    # 3. Perform the Alignment via Inequality Join logic
+    # We join spikes to events where spike_time is within the event window.
+    # DuckDB is natively integrated with Polars and is the absolute fastest at this specific "Interval Join".
+    
+    # Materialize the filtered lazy frames
+    df_spikes = spikes_lf.collect()
+    df_events = events_lf.collect()
+    
+    query = f"""
+        SELECT 
+            e.session_id,
+            e.trial_num,
+            s.cluster_id,
+            (s.spike_time - e.timestamp) AS relative_time
+        FROM df_events e
+        INNER JOIN df_spikes s 
+            ON s.session_id = e.session_id
+            AND s.spike_time >= (e.timestamp + {window[0]})
+            AND s.spike_time <= (e.timestamp + {window[1]})
+    """
+    
+    aligned_spikes = duckdb.query(query).pl()
+    return aligned_spikes
 
 def zscore_by_trial(resp_dict: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, Dict[str, np.ndarray]]:
     zscore_by_trial_resps: Dict[str, Dict[str, np.ndarray]] = {}

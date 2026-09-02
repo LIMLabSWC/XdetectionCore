@@ -8,6 +8,7 @@ import platform
 from pathlib import Path
 
 import pandas as pd
+import zarr
 
 from .paths import extract_date
 
@@ -296,3 +297,69 @@ def load_response_dfs(save_path: Path) -> defaultdict[str, pd.DataFrame]:
         for key in store.keys():
             response_dfs[key.strip('/')] = store.get(key)
     return response_dfs
+
+
+class ZarrRateStore:
+    """Handles read/write operations for high-dimensional arrays in Zarr."""
+    
+    def __init__(self, zarr_path: Path):
+        self.root = zarr.open_group(store=str(zarr_path), mode='a')
+        
+    def save_event_rates(self, session_id: str, event_name: str, 
+                         rate_matrix: np.ndarray, unit_ids: np.ndarray):
+        """Saves a 3D rate matrix (Trials x Units x Timebins) with trial-level chunking."""
+        sess_group = self.root.require_group(str(session_id))
+        
+        arr = sess_group.create_dataset(
+            name=str(event_name),
+            data=rate_matrix,
+            chunks=(1, rate_matrix.shape[1], rate_matrix.shape[2]),
+            overwrite=True,
+            compressor=zarr.Blosc(cname='zstd', clevel=3)
+        )
+        arr.attrs['unit_ids'] = list(unit_ids)
+
+    def load_event_rates(self, session_id: str, event_name: str, units: list = None):
+        """Loads event rate matrices, with optional unit-level slicing."""
+        arr = self.root[str(session_id)][str(event_name)]
+        
+        if units is None:
+            return arr[:]
+            
+        all_units = arr.attrs['unit_ids']
+        unit_indices = [all_units.index(u) for u in units]
+        return arr.oindex[:, unit_indices, :]
+
+class EphysDataset:
+    """Main interface for querying metadata, Parquet events/spikes, and Zarr rate matrices."""
+    
+    def __init__(self, db_root: str | Path):
+        self.root = Path(db_root)
+        self.spikes_path = self.root / "spikes"
+        self.events_path = self.root / "events"
+        self.rates_store = ZarrRateStore(self.root / "rates.zarr")
+        
+        # Load registry into memory for instant filtering
+        registry_file = self.root / "metadata.csv"
+        if registry_file.exists():
+            self.registry = pd.read_csv(registry_file)
+        else:
+            self.registry = pd.DataFrame()
+
+    def query_sessions(self, **kwargs) -> list:
+        """Find session IDs matching metadata filters (e.g., stage=3, animal='DO79')."""
+        if self.registry.empty:
+            return []
+            
+        query_str = " and ".join(f"{k} == {repr(v)}" for k, v in kwargs.items())
+        return self.registry.query(query_str)['session_id'].astype(str).tolist()
+
+    def get_population_tensor(self, sessions: list, event_name: str) -> dict:
+        """Retrieves 3D rate matrices across sessions without loading unused files."""
+        pop_data = {}
+        for sess in sessions:
+            try:
+                pop_data[str(sess)] = self.rates_store.load_event_rates(str(sess), event_name)
+            except KeyError:
+                print(f"Warning: Rates for '{event_name}' not found in session {sess}.")
+        return pop_data

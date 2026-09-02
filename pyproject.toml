@@ -19,6 +19,8 @@ dependencies = [
     "scikit-learn",
     "pyyaml",
     "mne",
+    "polars[gpu]",
+    
     
 ]
 [project.optional-dependencies]
