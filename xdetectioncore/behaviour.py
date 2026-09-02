@@ -19,6 +19,8 @@ def load_aggregate_td_df(session_topolgy: pd.DataFrame,home_dir:Path,td_df_query
     # get main sess pattern
     td_path_pattern = 'data/Dammy/<name>/TrialData'
     if 'tdata_file' not in session_topolgy.columns:
+        raise NotImplementedError('This function only supports session_topology with tdata_file column.' \
+        '\n Please add tdata_file column to session_topology or use get_main_sess_td_df function.')
         td_paths = [Path(sess_info['sound_bin'].replace('_SoundData', '_TrialData')).with_suffix('.csv').name
                     for _,sess_info in session_topolgy.iterrows()]
         abs_td_paths = [home_dir / td_path_pattern.replace('<name>', sess_info['name']) / td_path
@@ -29,7 +31,7 @@ def load_aggregate_td_df(session_topolgy: pd.DataFrame,home_dir:Path,td_df_query
     sessnames = [Path(sess_info['sound_bin'].replace('_SoundData', '')).stem
                  for _, sess_info in session_topolgy.iterrows()]
     abs_td_paths = [home_dir/posix_from_win(td_path,'/nfs/nhome/live/aonih') if isinstance(td_path,(str,Path)) else None for td_path in abs_td_paths]
-    td_dfs = {sessname: get_main_sess_td_df(_main_sess_td_name=abs_td_path,_home_dir=home_dir)[0]
+    td_dfs = {sessname: get_main_sess_td_df(_main_sess_td_name=abs_td_path,_home_dir=home_dir,sessname=sessname)[0]
               for sessname, abs_td_path in tqdm(zip(sessnames, abs_td_paths),total=len(abs_td_paths),desc='loading td dfs')
               if abs_td_path is not None
               }
@@ -44,12 +46,6 @@ def load_aggregate_td_df(session_topolgy: pd.DataFrame,home_dir:Path,td_df_query
 
 def format_td_df(td_df:pd.DataFrame, sessname:str) -> pd.DataFrame:
 
-    # tddir_path = posix_from_win(tddir_path)
-    # td_path = Path(td_home)/tddir_path/tdfile_path
-
-    name, date = sessname.split('_')[:2]
-    if not date.isnumeric():
-        date = date[:-1]
 
     if 'Session_Block' not in td_df.columns:
         if 'WarmUp' not in td_df.columns:
@@ -636,7 +632,7 @@ def get_main_sess_patterns(name='', date='', main_sess_td_name='', home_dir=Path
     return sorted(main_patterns, key=lambda x: x[0])
 
 
-def get_main_sess_td_df(_name=None, _date=None, _main_sess_td_name=None, _home_dir=None):
+def get_main_sess_td_df(_name=None, _date=None, _main_sess_td_name=None, _home_dir=None, sessname=None):
     abs_td_path = None
     if _main_sess_td_name is not None and isinstance(_main_sess_td_name, Path):
         split_path = _main_sess_td_name.parts
@@ -676,13 +672,16 @@ def get_main_sess_td_df(_name=None, _date=None, _main_sess_td_name=None, _home_d
 
     _date = extract_date(abs_td_path.stem)
     _name = abs_td_path.stem.split('_')[0]
+    if sessname is not None:
+        sessname = f'{_name}_{_date}'
 
     # set a multiindex of name, date, sess and trial num
     main_sess_td.index = pd.MultiIndex.from_arrays([[_name]*len(main_sess_td),
                                                    [_date]*len(main_sess_td),
                                                    [f'{_name}_{_date}']*len(main_sess_td),
+                                                   [sessname]*len(main_sess_td),
                                                    main_sess_td.reset_index().index+1],
-                                                  names=['name','date','sess','trial_num'])
+                                                  names=['name','date','sess','sess_id','trial_num'])
         
     times2process = ['Trial_Start', 'ToneTime', 'Trial_End', 'Gap_Time','Bonsai_Time']
 
