@@ -21,6 +21,7 @@ dependencies = [
     "mne",
     "polars[gpu]",
     "zarr",
+    "duckdb",
     
     
 ]
