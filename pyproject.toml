@@ -19,7 +19,7 @@ dependencies = [
     "scikit-learn",
     "pyyaml",
     "mne",
-    "polars[gpu]",
+    "polars",
     "zarr",
     "duckdb",
     
