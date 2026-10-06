@@ -30,25 +30,22 @@ from ..stats import save_stats_to_tex
 from .spike_time_utils import zscore_by_trial
 from .unit_analysis import UnitAnalysis
 
-
 def rolling_mean_convolve(arr, window):
     return np.convolve(arr, np.ones(window) / window, mode='valid')
 
 
 def padded_rolling_mean(arr, window):
-
     _arr = arr.copy()
-    _arr = arr.reshape(-1,arr.shape[-1])
+    _arr = arr.reshape(-1, arr.shape[-1])
     if arr.ndim == 1:
         mean_vals = rolling_mean_convolve(arr.flatten(), window)
-        pad = np.full(window - 1, np.nan)  # or use another method like forward-fill
+        pad = np.full(window - 1, np.nan)
         return np.concatenate((pad, mean_vals))
     else:
-        mean_vals = [rolling_mean_convolve(e,window) for e in _arr]
+        mean_vals = [rolling_mean_convolve(e, window) for e in _arr]
         _pad = [np.full(window - 1, np.nan) for e in _arr]
-        _padded = [np.concatenate((e,ee)) for e,ee in zip(_pad, mean_vals)]
-        return np.concatenate(_padded,axis=0).reshape(arr.shape)
-
+        _padded = [np.concatenate((e, ee)) for e, ee in zip(_pad, mean_vals)]
+        return np.concatenate(_padded, axis=0).reshape(arr.shape)
 
 
 def main():
@@ -56,7 +53,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(message)s')
     logging.getLogger("matplotlib").setLevel(logging.CRITICAL)
 
-    # load config
+    # Load config
     config_path = Path(args.config_file)
     if config_path.is_file():
         with open(config_path, 'r') as f:
@@ -82,53 +79,31 @@ def main():
 
     # Set figure directories
     psth_figdir = ceph_dir / posix_from_win(plot_config.get('psth_figdir', r'X:\Dammy\figures\psth_analysis'))
+    decoding_figdir = ceph_dir / posix_from_win(plot_config.get('decoding_figdir', r'X:\Dammy\figures\rare_freq_decoding'))
+    pca_fidir = ceph_dir / posix_from_win(plot_config.get('pca_figdir', r'X:\Dammy\figures\pca_plots'))
 
-    decoding_figdir = ceph_dir / posix_from_win(plot_config.get('decoding_figdir',
-                                                                r'X:\Dammy\figures\rare_freq_decoding'))
-    pca_fidir = ceph_dir / posix_from_win(plot_config.get('pca_figdir',
-                                                          r'X:\Dammy\figures\pca_plots'))
     for fig_dir in [decoding_figdir, pca_fidir, psth_figdir]:
         if not fig_dir.is_dir():
             fig_dir.mkdir(parents=False)
-    plt.subplots()
 
-    plt.style.use('figure_stylesheet.mplstyle')
+    mpl.style.use('figure_stylesheet.mplstyle')
 
-    all_stim_resps = AggregateSession(pkl_dir,args, plot_config,['A-0','X','base'])
-    # all_stim_resps = AggregateSession(pkl_dir,args, plot_config,['A-0'])
-    # all_stim_resps.aggregate_mean_sess_responses()
-    # plot_config['psth_plot_kwargs']['plot_window'] = [-0.25,1]
-    # all_stim_resps.plot_sorted_psth_mat(plot_kwargs=plot_config['psth_plot_kwargs'])
-    # window = plot_config[f'plot_window']
-    #
-    # # for pip in ['A-0','X']:
-    # for pip in ['A-0']:
-    #     add_x_scale_bar(all_stim_resps.plots[f'{pip}_sorted_psth'][1][1], size=0.2,
-    #                     label='0.2 s', color='k', frameon=False, fontproperties={'size': 5})
-    #     all_stim_resps.plots[f'{pip}_sorted_psth'][1][0].locator_params(axis='y', nbins=2)
-    #     all_stim_resps.plots[f'{pip}_sorted_psth'][0].set_size_inches(1.2, 1.8)
-    #     all_stim_resps.plots[f'{pip}_sorted_psth'][0].set_layout_engine('tight')
-    #
-    #     save_name = psth_figdir / f"{pip}_all_animals_{window[0]}_{window[1]}.pdf"
-    #     logging.info(f"Saving {save_name}")
-    #     all_stim_resps.plots[f'{pip}_sorted_psth'][0].savefig(save_name, dpi=600)
-    #     plt.close(all_stim_resps.plots[f'{pip}_sorted_psth'][0])
-    #
-    all_stim_resps.aggregate_sess_decoding('stim_decoding',
-                                           df_save_path=decoding_figdir/'stim_decoding_df.h5')
+    all_stim_resps = AggregateSession(pkl_dir, args, plot_config, ['A-0', 'X', 'base'])
+
+    all_stim_resps.aggregate_sess_decoding('stim_decoding', df_save_path=decoding_figdir / 'stim_decoding_df.h5')
     all_stim_resps.plot_decoder_boxplot(decoding_figdir)
-    for pips2decode in plot_config['stim_decoding']['pips2decode']:
-        all_stim_resps.decoding_ttest('_vs_'.join(pips2decode),'data','shuffled')
-    for ttest_name, ttest_res in all_stim_resps.ttest_res.items():
-        save_stats_to_tex(ttest_res,decoding_figdir / f'{ttest_name}.tex')
 
+    for pips2decode in plot_config['stim_decoding']['pips2decode']:
+        all_stim_resps.decoding_ttest('_vs_'.join(pips2decode), 'data', 'shuffled')
+
+    for ttest_name, ttest_res in all_stim_resps.ttest_res.items():
+        save_stats_to_tex(ttest_res, decoding_figdir / f'{ttest_name}.tex')
 
     logging.info("All done.")
 
-class ConcatResponses:
-    def __init__(self, batch_event_responses: dict, event_features: dict,pips, plot_config: dict,
-                 zscore_flag=False, **psth_kwargs):
 
+class ConcatResponses:
+    def __init__(self, batch_event_responses: dict, event_features: dict, pips, plot_config: dict, zscore_flag=False, **psth_kwargs):
         self.concatenated_event_sessnames = None
         self.peak_ts_by_pips = None
         self.event_mats_4_sorting = None
@@ -140,8 +115,7 @@ class ConcatResponses:
         self.event_features = event_features
 
         self.get_concatenated_event_responses(batch_event_responses, zscore_flag=zscore_flag)
-
-        self.get_smoothed_responses(batch_event_responses,psth_kwargs.get('smoothing_window', 25))
+        self.get_smoothed_responses(batch_event_responses, psth_kwargs.get('smoothing_window', 25))
 
     def get_concatenated_event_responses(self, batch_event_responses: dict, zscore_flag=False):
         concatenated_event_responses = {}
@@ -152,24 +126,24 @@ class ConcatResponses:
             batch_event_responses = zscore_by_trial(batch_event_responses)
 
         for pip in list(batch_event_responses.values())[0]:
-            concatenated_event_sessnames[pip] = np.concatenate([[e]*batch_event_responses[e][pip].shape[1]
-                                                                for e in batch_event_responses], axis=0)
+            concatenated_event_sessnames[pip] = np.concatenate(
+                [[e] * batch_event_responses[e][pip].shape[1] for e in batch_event_responses], axis=0
+            )
+            concatenated_event_responses[pip] = np.concatenate(
+                [batch_event_responses[e][pip].mean(axis=0) for e in batch_event_responses], axis=0
+            )
+            concatenated_event_responses_sem[pip] = np.concatenate(
+                [sem(batch_event_responses[e][pip]) for e in batch_event_responses], axis=0
+            )
 
-            concatenated_event_responses[pip] = np.concatenate([batch_event_responses[e][pip].mean(axis=0)
-                                                                for e in batch_event_responses], axis=0)
-
-            concatenated_event_responses_sem[pip] = np.concatenate([sem(batch_event_responses[e][pip])
-                                                                    for e in batch_event_responses], axis=0)
         self.concatenated_event_responses = concatenated_event_responses
         self.concatenated_event_responses_sem = concatenated_event_responses_sem
         self.concatenated_event_sessnames = concatenated_event_sessnames
 
-
-    def get_sorted_resp_mat(self,batch_event_responses: dict, pips_2_plot: list, window: tuple, **psth_plot_kwargs):
+    def get_sorted_resp_mat(self, batch_event_responses: dict, pips_2_plot: list, window: tuple, **psth_plot_kwargs):
         resp_mats_by_pips = {}
         peak_ts_by_pips = {}
 
-        # filter out sessions with insufficient data
         for sessname in list(batch_event_responses.keys()):
             if not all([e in list(batch_event_responses[sessname].keys()) for e in pips_2_plot]):
                 logging.warning(f'Skipping {sessname} due to missing data')
@@ -177,24 +151,24 @@ class ConcatResponses:
                 continue
 
         for sessname in list(batch_event_responses.keys()):
-                if any([len(batch_event_responses[sessname][pip]) < 4  for pip in pips_2_plot]):
-                    logging.warning(f'Skipping {sessname} due to insufficient data')
-                    batch_event_responses.pop(sessname)
-                    continue
+            if any([len(batch_event_responses[sessname][pip]) < 4 for pip in pips_2_plot]):
+                logging.warning(f'Skipping {sessname} due to insufficient data')
+                batch_event_responses.pop(sessname)
+                continue
 
         if len(batch_event_responses) == 0:
             return None
+
         for pip in pips_2_plot:
-            # for animal in animal_list:
             kwargs = dict(window=window, sessname_filter=None, **psth_plot_kwargs)
             _, batch_resp_mat, peak_ts, _ = get_sorted_psth_matrix(batch_event_responses, pip, pip, **kwargs)
-
             resp_mats_by_pips[pip] = batch_resp_mat
             peak_ts_by_pips[pip] = peak_ts
+
         self.event_mats_4_sorting = resp_mats_by_pips
         self.peak_ts_by_pips = peak_ts_by_pips
 
-    def get_smoothed_responses(self,batch_event_responses: dict,smoothing_window=25):
+    def get_smoothed_responses(self, batch_event_responses: dict, smoothing_window=25):
         concatenated_event_responses = {}
         concatenated_event_responses_sem = {}
 
@@ -202,21 +176,25 @@ class ConcatResponses:
         for sessname in list(batch_event_responses.keys()):
             smoothed_responses[sessname] = {}
             for pip in list(batch_event_responses[sessname].keys()):
-                smoothed_responses[sessname][pip] = padded_rolling_mean(batch_event_responses[sessname][pip],
-                                                                        window=smoothing_window)
+                smoothed_responses[sessname][pip] = padded_rolling_mean(
+                    batch_event_responses[sessname][pip], window=smoothing_window
+                )
 
         for pip in list(smoothed_responses.values())[0]:
-            concatenated_event_responses[pip] = np.concatenate([smoothed_responses[e][pip].mean(axis=0)
-                                                                for e in smoothed_responses], axis=0)
-            concatenated_event_responses_sem[pip] = np.concatenate([sem(smoothed_responses[e][pip])
-                                                                    for e in smoothed_responses], axis=0)
+            concatenated_event_responses[pip] = np.concatenate(
+                [smoothed_responses[e][pip].mean(axis=0) for e in smoothed_responses], axis=0
+            )
+            concatenated_event_responses_sem[pip] = np.concatenate(
+                [sem(smoothed_responses[e][pip]) for e in smoothed_responses], axis=0
+            )
+
         self.smoothed_event_responses = concatenated_event_responses
         self.smoothed_event_responses_sem = concatenated_event_responses_sem
 
 
 class AggregateSession:
     def __init__(self, dataset, all_td_df_h5_path, plot_config, pips_2_plot=None):
-        self.dataset = dataset  # EphysDataset instance accessing Parquet & Zarr
+        self.dataset = dataset
         self.plot_config = plot_config
 
         self.pca = {}
@@ -240,28 +218,19 @@ class AggregateSession:
 
         self.all_td_df: pd.DataFrame = pd.read_hdf(all_td_df_h5_path)
 
-    def fetch_event_features_polars(self, sessions: list[str], events: list[str],) -> pl.DataFrame:
-        """
-        Fast multi-session event feature loading using Polars lazy scanning.
-        """
+    def fetch_event_features_polars(self, sessions: list[str], events: list[str]) -> pl.DataFrame:
+        """Fast multi-session event feature loading using Polars lazy scanning."""
         events_lazy = pl.scan_parquet(self.dataset.root / "events" / "**" / "*.parquet")
-        
         return (
-            events_lazy
-            .filter(
-                (pl.col("session_id").is_in(sessions)) & 
+            events_lazy.filter(
+                (pl.col("session_id").is_in(sessions)) &
                 (pl.col("event_name").is_in(events))
-            )
-            .collect()
+            ).collect()
         )
 
     @staticmethod
     def _process_single_session_worker(sess, raw_events, dataset, events_df_slice, aggr_sess_kwargs):
-        """
-        Worker function executed in parallel for a single session.
-        Loads Zarr tensor, applies subset_responses, and computes per-session unit means/SEMs.
-        """
-        # 1. Load population tensors for this session only
+        """Worker function executed in parallel for a single session."""
         session_resps = {sess: {}}
         for event in raw_events:
             pop_tensors = dataset.get_population_tensor([sess], event_name=event)
@@ -271,13 +240,11 @@ class AggregateSession:
         if not session_resps[sess]:
             return None
 
-        # Re-instantiate or access subset logic for single session
         aggr_sess_instance = aggr_sess_kwargs['aggr_sess_instance']
         conds = aggr_sess_kwargs.get('conds')
         cond_filts = aggr_sess_kwargs.get('cond_filts')
         pips_2_plot = aggr_sess_kwargs.get('pips_2_plot')
 
-        # 2. Run subsetting on session-level response dict
         subsetted = aggr_sess_instance.subset_responses(
             session_responses=session_resps,
             events_df=events_df_slice,
@@ -291,7 +258,6 @@ class AggregateSession:
 
         sess_resps = subsetted[sess]
 
-        # Validate conditions and minimum trial count (> 3 trials)
         if not all(pip in sess_resps for pip in pips_2_plot):
             return None
         if any(len(sess_resps[pip]) < 4 for pip in pips_2_plot):
@@ -299,26 +265,21 @@ class AggregateSession:
 
         return sess, sess_resps
 
-
-    # --- Updated AggregateSession Method ---
-
     def aggregate_mean_sess_responses_parallel(self, tag=None, conds=None, concat_savename=None, n_jobs=-1, **kwargs):
-        """
-        Parallelized response aggregation exploiting per-session Zarr & Parquet storage architecture.
-        """
+        """Parallelized response aggregation exploiting per-session Zarr & Parquet storage architecture."""
         if tag is None:
             tag = 'all'
 
         cond_filts = get_all_cond_filts()
         pips_2_plot = copy(self.pips_2_plot)
+
         if conds is not None:
-            pips_2_plot = [f'{pip}_{cond}' for pip, cond in zip(pips_2_plot, conds)]
+            pips_2_plot = [f'{pip}_{cond}' for pip in pips_2_plot for cond in conds]
 
         if concat_savename is not None and kwargs.get('reload_save', True):
             if self._load_aggr_means(concat_savename):
                 return None
 
-        # 1. Resolve Target Sessions
         target_sessions = kwargs.get('sessions', self.plot_config.get('sessions', []))
         if not target_sessions and not self.dataset.registry.empty:
             target_sessions = self.dataset.registry['session_id'].astype(str).tolist()
@@ -328,10 +289,8 @@ class AggregateSession:
 
         raw_events = list(set([p.split('_')[0] for p in pips_2_plot]))
 
-        # 2. Fast multi-session Polars load (Single process read is optimal for Parquet metadata scan)
         events_df = self.fetch_event_features_polars(sessions, raw_events)
 
-        # Prepare worker arguments
         worker_kwargs = {
             'aggr_sess_instance': self,
             'conds': conds,
@@ -340,11 +299,9 @@ class AggregateSession:
             'kwargs': kwargs
         }
 
-        # 3. Parallel Processing across sessions
         logging.info(f"Extracting and subsetting {len(sessions)} sessions using n_jobs={n_jobs}...")
-        
-        # Slice Polars events per session to minimize IPC serialization overhead
-        results = Parallel(n_jobs=n_jobs, prefer="threads")(
+
+        results = Parallel(n_jobs=n_jobs, prefer="processes")(
             delayed(self._process_single_session_worker)(
                 sess,
                 raw_events,
@@ -355,14 +312,12 @@ class AggregateSession:
             for sess in sessions
         )
 
-        # 4. Reconstruct combined batch dictionary from parallel worker outputs
         batch_responses = {sess: resps for res in results if res is not None for sess, resps in [res]}
 
         if len(batch_responses) == 0:
             logging.info(f"No valid responses remaining after parallel processing for conditions: {conds}")
             return None
 
-        # 5. Process & Smooth via ConcatResponses
         resp_obj = ConcatResponses(
             batch_event_responses=batch_responses,
             event_features=self.event_features,
@@ -376,7 +331,6 @@ class AggregateSession:
             logging.warning("Failed to aggregate responses in ConcatResponses.")
             return None
 
-        # 6. Assign Aggregated Outputs
         self.peak_ts_by_pips = resp_obj.peak_ts_by_pips
         self.event_mats_4_sorting = resp_obj.event_mats_4_sorting
         self.concatenated_event_responses = resp_obj.concatenated_event_responses
@@ -385,18 +339,14 @@ class AggregateSession:
         self.smoothed_concatenated_responses_sem = resp_obj.smoothed_event_responses_sem
         self.concatenated_sessnames = resp_obj.concatenated_event_sessnames[pips_2_plot[0]]
 
-        logging.info(
-            f"{pips_2_plot} shape: {[e.shape for e in self.concatenated_event_responses.values()]}"
-        )
+        logging.info(f"{pips_2_plot} shape: {[e.shape for e in self.concatenated_event_responses.values()]}")
 
         if concat_savename:
             self._save_aggr_means(concat_savename)
 
     @staticmethod
     def _process_decoding_session_worker(sess, raw_events, dataset, sess_events_df, worker_kwargs):
-        """
-        Parallel worker to process, splice, and run decoding on a single session's Zarr & Parquet data.
-        """
+        """Parallel worker to process, splice, and run decoding on a single session's data."""
         aggr_inst = worker_kwargs['aggr_sess_instance']
         conds = worker_kwargs['conds']
         cond_filts = worker_kwargs['cond_filts']
@@ -411,7 +361,6 @@ class AggregateSession:
         new_x_ser = worker_kwargs['new_x_ser']
         kwargs = worker_kwargs['kwargs']
 
-        # Extract & subset session event responses from Zarr/Parquet
         batch_responses = aggr_inst.extract_and_subset_responses(
             sess=sess,
             raw_events=raw_events,
@@ -426,19 +375,14 @@ class AggregateSession:
             logging.info(f"No responses found for conditions {conds} in session {sess}")
             return None
 
-        # Splice responses if requested
         if splice_responses:
             batch_responses = aggr_inst.splice_responses(
-                batch_responses,
-                splice_windows,
-                new_names,
-                old_x_ser
+                batch_responses, splice_windows, new_names, old_x_ser
             )
             current_x_ser = new_x_ser
         else:
             current_x_ser = aggr_inst.x_ser
 
-        # Execute decoding pipeline for the session
         dec_results = run_decoding(
             batch_responses,
             current_x_ser,
@@ -457,17 +401,13 @@ class AggregateSession:
         return decode_dfs, cms, cms_shuffle
 
     def aggregate_sess_decoding_parallel(self, dec_tag, conds=None, n_jobs=-1, **kwargs):
-        """
-        Parallelized decoding aggregation exploiting per-session Zarr & Parquet storage architecture.
-        """
+        """Parallelized decoding aggregation exploiting per-session storage."""
         cond_filts = get_all_cond_filts()
-        plot_config2use = kwargs.get('plot_config', self.plot_config)
         pips2decode = kwargs.get('pips2decode', self.plot_config[dec_tag]['pips2decode'])
         decoding_window = self.plot_config[dec_tag]['decoding_window']
 
         df_loaded, cms_loaded = False, False
 
-        # 1. Reload cached outputs if available
         if kwargs.get('df_save_path'):
             df_save_path = Path(kwargs.get('df_save_path'))
             cm_save_path = df_save_path.with_name(df_save_path.name.replace('df.h5', 'cm.npy'))
@@ -498,7 +438,6 @@ class AggregateSession:
         else:
             old_x_ser, splice_windows, new_names, new_x_ser = None, None, None, None
 
-        # 2. Resolve Target Sessions
         target_sessions = kwargs.get('sessions', self.plot_config.get('sessions', []))
         if not target_sessions and not self.dataset.registry.empty:
             target_sessions = self.dataset.registry['session_id'].astype(str).tolist()
@@ -508,10 +447,8 @@ class AggregateSession:
 
         raw_events = list(set([p.split('_')[0] for p in pips2decode]))
 
-        # 3. Fast multi-session Polars metadata fetch
         events_df = self.fetch_event_features_polars(sessions, raw_events)
 
-        # Prepare worker argument payload
         worker_kwargs = {
             'aggr_sess_instance': self,
             'conds': conds,
@@ -528,7 +465,6 @@ class AggregateSession:
             'kwargs': kwargs
         }
 
-        # 4. Parallel Processing across sessions
         logging.info(f"Decoding across {len(sessions)} sessions using n_jobs={n_jobs}...")
 
         results = Parallel(n_jobs=n_jobs, prefer="threads")(
@@ -542,14 +478,12 @@ class AggregateSession:
             for sess in sessions
         )
 
-        # 5. Filter valid session returns
         results = [res for res in results if res is not None]
 
         if not results:
             logging.warning(f"No decoding results generated across any session for conditions: {conds}")
             return None
 
-        # 6. Aggregate Output Collections
         batch_decoding_dfs = [res[0] for res in results]
         batch_cms = [res[1] for res in results if res[1] is not None and res[1].ndim == 3]
         batch_cms_shuffled = [res[2] for res in results if res[2] is not None]
@@ -561,7 +495,6 @@ class AggregateSession:
 
         self.decoder_name = dec_tag
 
-        # 7. Save Aggregated Results to Disk
         if kwargs.get('df_save_path'):
             df_save_path = Path(kwargs.get('df_save_path'))
             cm_save_path = df_save_path.with_name(df_save_path.name.replace('df.h5', 'cm.npy'))
@@ -573,13 +506,8 @@ class AggregateSession:
 
     @staticmethod
     def splice_responses(batch_responses: dict, windows: list, new_names: list, x_ser: np.ndarray) -> dict:
-        """
-        Splices response time series arrays across specified time windows and maps them
-        to new response keys for each session in batch_responses.
-        """
-        # Convert time window bounds into array index bounds
+        """Splices response time series arrays across specified time windows."""
         windows_idxs = [[np.where(x_ser == t)[0][0] for t in _window] for _window in windows]
-
         spliced_batch_responses = {}
 
         for sess, resps_dict in batch_responses.items():
@@ -597,19 +525,13 @@ class AggregateSession:
 
         return spliced_batch_responses
 
-
     def subset_responses(self, session_responses, events_df=None, conds=None, cond_filts=None, sessname_filts=None, **kwargs):
-        """
-        Subsets neural response matrices (3D: trials x units x time) per session and event,
-        using self.all_td_df and optional condition/trial filters.
-        """
-        # Step 1: Session name filtering
+        """Subsets neural response matrices (3D: trials x units x time) per session and event."""
         if sessname_filts is not None:
             session_responses = self._filter_by_session_names(session_responses, sessname_filts)
             if not session_responses:
                 return session_responses
 
-        # Step 2: Behavioral condition filtering
         if conds is not None:
             assert cond_filts is not None, "cond_filts dictionary must be provided when conds is set."
             filtered_responses = {}
@@ -621,7 +543,6 @@ class AggregateSession:
                     filtered_responses[sess] = filtered_resps
             session_responses = filtered_responses
 
-        # Prune empty sessions/responses
         session_responses = {
             sess: resps for sess, resps in session_responses.items()
             if resps and all(r.shape[0] > 0 for r in resps.values())
@@ -631,7 +552,6 @@ class AggregateSession:
             logging.info("No responses remaining after condition filtering.")
             return session_responses
 
-        # Step 3: Specific trial number matching
         if kwargs.get('filt_by_trial_num', False):
             session_responses = self._filter_by_trial_numbers(
                 session_responses, events_df, cond_filts=cond_filts, **kwargs
@@ -639,9 +559,8 @@ class AggregateSession:
 
         return session_responses
 
-
     def _filter_by_session_names(self, session_responses, sessname_filts):
-        """Step 1 Helper: Filters session dictionary keys against allowed session strings/patterns."""
+        """Filters session dictionary keys against allowed session strings/patterns."""
         if isinstance(sessname_filts, (str, set)):
             allowed = {sessname_filts} if isinstance(sessname_filts, str) else sessname_filts
             return {s: res for s, res in session_responses.items() if s in allowed}
@@ -650,32 +569,49 @@ class AggregateSession:
         return session_responses
 
     def _filter_session_by_conditions(self, sess, sess_resps, conds, cond_filts, events_df=None):
-        """Step 2 Helper: Applies condition filters to session event tensors using Polars or pandas metadata."""
-        # Fallback to class attribute metadata if events_df is omitted
+        """Applies condition filters to session event tensors using Polars or pandas metadata."""
         df_source = events_df if events_df is not None else getattr(self, 'all_td_df', None)
         if df_source is None:
             logging.warning(f"No metadata dataframe available for filtering session {sess}.")
             return {}
 
-        # Slice session metadata
-        if isinstance(df_source, pl.DataFrame):
-            sess_df = df_source.filter(pl.col("session_id") == sess)
+        if isinstance(self.all_td_df.index, pd.MultiIndex):
+            sess_level = "sess_id" if "sess_id" in self.all_td_df.index.names else "session_id"
+            trial_level = "trial_num" if "trial_num" in self.all_td_df.index.names else "trial"
+            try:
+                sess_td_df = self.all_td_df.xs(sess, level=sess_level, drop_level=False)
+            except KeyError:
+                return {}
         else:
-            sess_df = df_source[df_source["session_id"] == sess]
+            sess_col = "session_id" if "session_id" in self.all_td_df.columns else "sess_id"
+            trial_level = "trial_num" if "trial_num" in self.all_td_df.columns else "trial"
+            sess_td_df = self.all_td_df[self.all_td_df[sess_col] == sess]
 
-        if len(sess_df) == 0:
+        if sess_td_df.empty:
             return {}
 
         filtered_resps = {}
-        pips_2_plot = getattr(self, 'pips_2_plot', list(sess_resps.keys()))
+
+        if isinstance(df_source, pl.DataFrame):
+            sess_events_df = df_source.filter(pl.col("session_id") == sess)
+        else:
+            sess_events_df = df_source[df_source["session_id"] == sess]
 
         for raw_event, tensor in sess_resps.items():
-            # Slice event-specific metadata if column exists
-            if isinstance(sess_df, pl.DataFrame):
-                event_df = sess_df.filter(
-                    pl.col("event_type") == raw_event) if "event_type" in sess_df.columns else sess_df
+            if isinstance(sess_events_df, pl.DataFrame):
+                event_col = "event_name" if "event_name" in sess_events_df.columns else "event_type"
+                event_df = (
+                    sess_events_df.filter(pl.col(event_col) == raw_event)
+                    if event_col in sess_events_df.columns
+                    else sess_events_df
+                )
             else:
-                event_df = sess_df[sess_df["event_type"] == raw_event] if "event_type" in sess_df.columns else sess_df
+                event_col = "event_name" if "event_name" in sess_events_df.columns else "event_type"
+                event_df = (
+                    sess_events_df[sess_events_df[event_col] == raw_event]
+                    if event_col in sess_events_df.columns
+                    else sess_events_df
+                )
 
             for cond in conds:
                 pip_label = f"{raw_event}_{cond}"
@@ -685,22 +621,31 @@ class AggregateSession:
 
                 filt = cond_filts[cond]
 
-                # --- Query Evaluation Engine (String Primary) ---
-                sess_td_df = self.all_td_df.loc[self.all_td_df.index.get_level_values("sess_id") == sess]
-                filt_trial_nums = sess_td_df.query(filt).index.get_level_values("trial_num").values
+                try:
+                    matching_td = sess_td_df.query(filt)
+                    if isinstance(matching_td.index, pd.MultiIndex):
+                        filt_trial_nums = matching_td.index.get_level_values(trial_level).values
+                    else:
+                        filt_trial_nums = matching_td[trial_level].values
+                except Exception as e:
+                    logging.debug(f"Query '{filt}' failed for session {sess}: {e}")
+                    continue
 
                 if len(filt_trial_nums) == 0:
                     continue
 
-                # Filter event metadata by matching trial numbers
-                matched_df = event_df.filter(pl.col("trial_num").is_in(filt_trial_nums))
+                filt_trial_nums = np.array(filt_trial_nums, dtype=np.int64)
 
-                if matched_df.is_empty():
-                    continue
-
-                # Slice population tensor using bounded indices
-                valid_indices = event_df.with_row_index("row_idx").filter(
-                    pl.col("trial_num").is_in(filt_trial_nums))["row_idx"].to_list()
+                if isinstance(event_df, pl.DataFrame):
+                    t_col = "trial_num" if "trial_num" in event_df.columns else "trial"
+                    valid_indices = (
+                        event_df.with_row_index("row_idx")
+                        .filter(pl.col(t_col).cast(pl.Int64).is_in(filt_trial_nums))["row_idx"]
+                        .to_list()
+                    )
+                else:
+                    t_col = "trial_num" if "trial_num" in event_df.columns else "trial"
+                    valid_indices = event_df.index[event_df[t_col].isin(filt_trial_nums)].tolist()
 
                 if valid_indices:
                     filtered_resps[pip_label] = tensor[valid_indices, :, :]
@@ -708,14 +653,13 @@ class AggregateSession:
         return filtered_resps
 
     def _filter_by_trial_numbers(self, session_responses, events_df=None, cond_filts=None, **kwargs):
-        """Step 3 Helper: Subsets session matrices to exact trial counts across conditions for balanced sampling."""
+        """Subsets session matrices to exact trial counts across conditions for balanced sampling."""
         min_trials = kwargs.get('min_trial_num', None)
 
         for sess, pips_dict in list(session_responses.items()):
             if not pips_dict:
                 continue
 
-            # Determine trial counts across all condition PIPs in the session
             counts = [mat.shape[0] for mat in pips_dict.values()]
             if not counts:
                 continue
@@ -723,11 +667,9 @@ class AggregateSession:
             target_count = min(counts) if min_trials is None else min_trials
 
             if min_trials is not None and target_count < min_trials:
-                # Remove session entirely if trial count falls below requested threshold
                 session_responses.pop(sess, None)
                 continue
 
-            # Crop trial arrays down to target trial count
             for pip, mat in pips_dict.items():
                 pips_dict[pip] = mat[:target_count, :, :]
 
@@ -750,37 +692,21 @@ class AggregateSession:
         return True
 
 
-import json
-import numpy as np
-import pandas as pd
-from pathlib import Path
-from matplotlib import pyplot as plt
-from scipy.stats import ttest_ind, ttest_1samp
-
-# Assuming required imports from original module (e.g., plot_shaded_error_ts, format_axis, PopPCA, etc.) are present
-from .population_analysis_funcs import PopPCA
-from ..plotting import plot_shaded_error_ts, format_axis, plot_sorted_psth_matrix
-from .aggregate_ephys_funcs import plot_aggr_cm
-from ..io_utils import extract_date
-
-
 class AggregateVisualizer:
-    """
-    Handles plotting, PCA, and statistical visualisations for already concatenated neural data.
-    """
+    """Handles plotting, PCA, and statistical visualisations for already concatenated neural data."""
 
     def __init__(
-            self,
-            concatenated_event_responses: dict,
-            x_ser: np.ndarray,
-            window: tuple,
-            concatenated_sessnames: np.ndarray = None,
-            smoothed_concatenated_responses: dict = None,
-            event_mats_4_sorting: dict = None,
-            peak_ts_by_pips: dict = None,
-            aggregate_decoding_df: pd.DataFrame = None,
-            cms: np.ndarray = None,
-            decoder_name: str = None
+        self,
+        concatenated_event_responses: dict,
+        x_ser: np.ndarray,
+        window: tuple,
+        concatenated_sessnames: np.ndarray = None,
+        smoothed_concatenated_responses: dict = None,
+        event_mats_4_sorting: dict = None,
+        peak_ts_by_pips: dict = None,
+        aggregate_decoding_df: pd.DataFrame = None,
+        cms: np.ndarray = None,
+        decoder_name: str = None
     ):
         self.concatenated_event_responses = concatenated_event_responses
         self.smoothed_concatenated_responses = (
@@ -801,24 +727,19 @@ class AggregateVisualizer:
         self.ttest_res = {}
         self.plots = {}
 
-    # --- Helper Methods ---
-
     def _resolve_pips(self, pips) -> list:
-        """Returns provided pips or defaults to all keys in concatenated_event_responses."""
         return pips if pips is not None else list(self.concatenated_event_responses.keys())
 
     def _save_and_display(self, fig, save_path: Path = None):
-        """Standardises figure saving and displaying, strictly using figure object methods."""
-        fig.show()
         if save_path:
             fig.savefig(save_path)
-
-    # --- Time Series & PSTH ---
 
     def plot_mean_ts(self, figdir: Path, pips=None, **kwargs):
         pips = self._resolve_pips(pips)
 
-        fig, ax = plt.subplots()
+        fig = Figure()
+        ax = fig.add_subplot(111)
+
         if kwargs.get('ts_plot_window') is not None:
             plot_t_idxs = [np.where(self.x_ser == t)[0][0] for t in kwargs.get('ts_plot_window')]
             plot_x_ser = self.x_ser[plot_t_idxs[0]:plot_t_idxs[1]]
@@ -826,8 +747,7 @@ class AggregateVisualizer:
             plot_t_idxs = [0, self.x_ser.shape[0]]
             plot_x_ser = self.x_ser
 
-        event_mean_dict = self.smoothed_concatenated_responses if kwargs.get('plot_smoothed_ts',
-                                                                             True) else self.concatenated_event_responses
+        event_mean_dict = self.smoothed_concatenated_responses if kwargs.get('plot_smoothed_ts', True) else self.concatenated_event_responses
 
         colours = kwargs.get('plot_cols', [f'C{i}' for i in range(len(pips))])
         name_date_df = pd.DataFrame(
@@ -856,12 +776,12 @@ class AggregateVisualizer:
         self.plots[f'{"_".join(pips)}_mean_ts'] = (fig, ax)
 
         plot_info = {
-                        'n_units': [e.shape[0] for e in event_mean_dict.values()],
-                        'sessnames': np.unique(self.concatenated_sessnames).tolist(),
-                        'n_sessions': len(np.unique(self.concatenated_sessnames)),
-                        'names': np.unique([e.split('_')[0] for e in self.concatenated_sessnames]).tolist(),
-                        'n_names': np.unique([e.split('_')[0] for e in self.concatenated_sessnames]).shape[0]
-                    }
+            'n_units': [e.shape[0] for e in event_mean_dict.values()],
+            'sessnames': np.unique(self.concatenated_sessnames).tolist(),
+            'n_sessions': len(np.unique(self.concatenated_sessnames)),
+            'names': np.unique([e.split('_')[0] for e in self.concatenated_sessnames]).tolist(),
+            'n_names': np.unique([e.split('_')[0] for e in self.concatenated_sessnames]).shape[0]
+        }
 
         with open(figdir / f'{"_".join(pips)}_mean_ts_info.json', 'w') as f:
             json.dump(plot_info, f)
@@ -877,8 +797,12 @@ class AggregateVisualizer:
             fig, axes = psth_plot[0], psth_plot[1]
             t_max = min(1, plot_kwargs.get('plot_window', self.window)[1])
 
-            format_axis(axes[1], vlines=([0] if 'A' not in pip else np.arange(0, t_max, 0.25).tolist()), ylabel='',
-                        xlabel='')
+            format_axis(
+                axes[1],
+                vlines=([0] if 'A' not in pip else np.arange(0, t_max, 0.25).tolist()),
+                ylabel='',
+                xlabel=''
+            )
             axes[1].set_xticks([])
             format_axis(axes[0], vlines=[0])
 
@@ -887,16 +811,18 @@ class AggregateVisualizer:
             except Exception:
                 pass
 
-                self.plots[f'{pip}_sorted_psth'] = psth_plot
+            self.plots[f'{pip}_sorted_psth'] = psth_plot
 
     def scatter_unit_means(self, pips, diff_window, figdir: Path, **kwargs):
         assert len(pips) == 2
 
         plot_t_idxs = [np.where(self.x_ser == t)[0][0] for t in diff_window]
-        unit_resps = [self.concatenated_event_responses[pip][:, plot_t_idxs[0]:plot_t_idxs[1]].max(axis=1) for pip
-                      in pips]
+        unit_resps = [
+            self.concatenated_event_responses[pip][:, plot_t_idxs[0]:plot_t_idxs[1]].max(axis=1) for pip in pips
+        ]
 
-        fig1, ax1 = plt.subplots()
+        fig1 = Figure()
+        ax1 = fig1.add_subplot(111)
         ax1.scatter(*unit_resps, alpha=0.02, fc='#1f76b2ff', ec='#1f76b2ff', lw=0.01)
         ax1.set_xlim(*np.percentile(unit_resps, [1, 99]))
         ax1.set_ylim(*np.percentile(unit_resps, [1, 99]))
@@ -911,7 +837,8 @@ class AggregateVisualizer:
         self._save_and_display(fig1, figdir / f'unit_resps_scatter{"_".join(pips)}.pdf')
         fig1.savefig(figdir / f'unit_resps_scatter{"_".join(pips)}.svg')
 
-        fig2, ax2 = plt.subplots()
+        fig2 = Figure()
+        ax2 = fig2.add_subplot(111)
         cond_diffs_by_unit = unit_resps[0] - unit_resps[1]
         bins2use = np.histogram(cond_diffs_by_unit, bins='fd', density=False)
         ax2.hist(cond_diffs_by_unit, bins=bins2use[1], density=False, alpha=0.9, fc='#a8cfe2ff', ec='k', lw=0.05)
@@ -924,8 +851,6 @@ class AggregateVisualizer:
         fig2.set_size_inches(2, 2)
         fig2.set_layout_engine('tight')
         self._save_and_display(fig2, figdir / f'unit_resps_hist_by_unit{"_".join(pips)}.pdf')
-
-    # --- Decoding & Stats ---
 
     def decoding_ttest(self, decoder_name, key1, key2, **ttest_kwargs):
         data_acc = self.aggregate_decoding_df[f'{decoder_name}_{key1}_accuracy'].dropna().values
@@ -943,14 +868,16 @@ class AggregateVisualizer:
             meanprops=dict(mfc='k'), boxprops=dict(lw=0.5), whiskerprops=dict(lw=0.5), capprops=dict(lw=0.5)
         )
 
-        fig, ax = plt.subplots()
+        fig = Figure()
+        ax = fig.add_subplot(111)
         labels = []
 
         if decs2plot is None:
             all_dec_cols = self.aggregate_decoding_df.columns.tolist()
             all_data_dec_cols = [col for col in all_dec_cols if 'data_accuracy' in col]
         else:
-            if isinstance(decs2plot, str): decs2plot = [decs2plot]
+            if isinstance(decs2plot, str):
+                decs2plot = [decs2plot]
             all_data_dec_cols = [f'{dec}_data_accuracy' for dec in decs2plot]
 
         all_shuffle_dec_cols = [col.replace('data', 'shuffled') for col in all_data_dec_cols]
@@ -958,11 +885,15 @@ class AggregateVisualizer:
         for dec_i, (data_name, shuff_name) in enumerate(zip(all_data_dec_cols, all_shuffle_dec_cols)):
             data_acc = self.aggregate_decoding_df[data_name].dropna().values
             shuff_acc = self.aggregate_decoding_df[shuff_name].dropna().values
-            lbls = [data_name.replace('_data_accuracy', f'\ndata: n {len(data_acc)}'),
-                    shuff_name.replace('_shuffled_accuracy', f'\nshuffle: n {len(data_acc)}')]
+            lbls = [
+                data_name.replace('_data_accuracy', f'\ndata: n {len(data_acc)}'),
+                shuff_name.replace('_shuffled_accuracy', f'\nshuffle: n {len(data_acc)}')
+            ]
 
             box = ax.boxplot(
-                [data_acc, shuff_acc], labels=lbls, positions=np.array([-0.3, 0.3]) + dec_i * len(lbls),
+                [data_acc, shuff_acc],
+                labels=lbls,
+                positions=np.array([-0.3, 0.3]) + dec_i * len(lbls),
                 **boxplot_kwargs
             )
             for patch in box['boxes']:
@@ -981,8 +912,6 @@ class AggregateVisualizer:
         fig, ax = plot_aggr_cm(self.cms, **cm_config)
         self._save_and_display(fig, decoding_figdir / f'{self.decoder_name}_cm.pdf')
 
-    # --- PCA ---
-
     def pca_pseudo_pop(self, pca_name: str, pips=None, standardise=True, by_animal=False, animal=None):
         pips = self._resolve_pips(pips)
 
@@ -990,8 +919,10 @@ class AggregateVisualizer:
             names = np.unique([sess.split('_')[0] for sess in self.concatenated_sessnames])
             sess_by_name_mask = {name: [name in sess for sess in self.concatenated_sessnames] for name in names}
             dict_for_pca = {
-                'by_class': {f'{pip}': self.concatenated_event_responses[pip][sess_by_name_mask[animal]] for pip in
-                             pips}}
+                'by_class': {
+                    f'{pip}': self.concatenated_event_responses[pip][sess_by_name_mask[animal]] for pip in pips
+                }
+            }
             pca_name = f'{pca_name}_{animal}'
         else:
             dict_for_pca = {'by_class': {pip: self.concatenated_event_responses[pip] for pip in pips}}
@@ -1003,8 +934,9 @@ class AggregateVisualizer:
 
     def plot_3d_pca(self, pca_name, pca_comps_2plot, figdir, pca_kwargs):
         pca = self.pca[pca_name]
-        pca.plot_3d_pca_ts('by_class', self.window, x_ser=self.x_ser, pca_comps_2plot=pca_comps_2plot,
-                           **pca_kwargs['plot_kwargs'])
+        pca.plot_3d_pca_ts(
+            'by_class', self.window, x_ser=self.x_ser, pca_comps_2plot=pca_comps_2plot, **pca_kwargs['plot_kwargs']
+        )
 
         fig, ax = pca.proj_3d_plot
         ax.get_legend().remove()
@@ -1015,8 +947,7 @@ class AggregateVisualizer:
 
     def plot_1d_pca(self, pca_name, pca_comp, figdir, pca_kwargs):
         pca = self.pca[pca_name]
-        pca.plot_1d_pca_ts('by_class', self.window, x_ser=self.x_ser, pca_comp=pca_comp,
-                           **pca_kwargs['plot_kwargs'])
+        pca.plot_1d_pca_ts('by_class', self.window, x_ser=self.x_ser, pca_comp=pca_comp, **pca_kwargs['plot_kwargs'])
 
         fig, ax = pca.pca_ts_plot
         if ax.get_legend() is not None:
@@ -1030,8 +961,9 @@ class AggregateVisualizer:
 
     def plot_2d_pca(self, pca_name, pca_comps_2plot, figdir, pca_kwargs):
         pca = self.pca[pca_name]
-        pca.plot_2d_pca_ts('by_class', self.window, x_ser=self.x_ser, pca_comps_2plot=pca_comps_2plot,
-                           **pca_kwargs['plot_kwargs'])
+        pca.plot_2d_pca_ts(
+            'by_class', self.window, x_ser=self.x_ser, pca_comps_2plot=pca_comps_2plot, **pca_kwargs['plot_kwargs']
+        )
         fig, ax = pca.proj_2d_plot
         format_axis(ax)
         if pca_kwargs['fig_kwargs'].get('figsize') is not None:
@@ -1041,8 +973,10 @@ class AggregateVisualizer:
 
     def scatter_pca(self, pca_name, t_s, pca_comps_2plot, figdir, pca_kwargs):
         pca = self.pca[pca_name]
-        pca.scatter_2d_pca('by_class', t_s, x_ser=self.x_ser, pca_comps_2plot=pca_comps_2plot,
-                           title=f'Time {t_s[0]}s to {t_s[1]}s', **pca_kwargs['plot_kwargs'])
+        pca.scatter_2d_pca(
+            'by_class', t_s, x_ser=self.x_ser, pca_comps_2plot=pca_comps_2plot,
+            title=f'Time {t_s[0]}s to {t_s[1]}s', **pca_kwargs['plot_kwargs']
+        )
 
         fig, ax = pca.scatter_plot
         if ax.get_legend() is not None:
@@ -1050,15 +984,14 @@ class AggregateVisualizer:
 
         self._save_and_display(fig, figdir / f'{pca_name}_scatter_{"_".join(list(map(str, pca_comps_2plot)))}.pdf')
 
-    def plot_pca_euclidean_distance(self, pca_name: str, times, figdir: Path, metric='cosine', n_pcs: int = None,
-                                    align_trajs: bool = False, align_method: str = "orthogonal",
-                                    align_pip_grouping=None,
-                                    global_align_window: tuple = None, reference: str = None, ref_id=0,
-                                    reduce_when_pairwise: str = "per_event_mean", labels_map: dict = None,
-                                    title: str = None, legend: bool = True, figsize: tuple = (7, 4),
-                                    lw: float = 2.0,
-                                    alpha: float = 0.95, save_pdf: bool = True, save_csv: bool = True):
-
+    def plot_pca_euclidean_distance(
+        self, pca_name: str, times, figdir: Path, metric='cosine', n_pcs: int = None,
+        align_trajs: bool = False, align_method: str = "orthogonal", align_pip_grouping=None,
+        global_align_window: tuple = None, reference: str = None, ref_id=0,
+        reduce_when_pairwise: str = "per_event_mean", labels_map: dict = None,
+        title: str = None, legend: bool = True, figsize: tuple = (7, 4), lw: float = 2.0,
+        alpha: float = 0.95, save_pdf: bool = True, save_csv: bool = True
+    ):
         pca = self.pca[pca_name]
         res = pca.pcspace_distances(
             prop='by_class', event_window=self.window, times=times, n_pcs=n_pcs, x_ser=self.x_ser,
@@ -1088,8 +1021,10 @@ class AggregateVisualizer:
         alg_tag = f"align_{align_method}" if align_trajs else "noalign"
 
         if save_pdf:
-            fig.savefig(figdir / f"{pca_name}_pcspace_dist_{ref_tag}_{red_tag}_{alg_tag}_{pcs_tag}_{tlabel}.pdf",
-                        dpi=300)
+            fig.savefig(
+                figdir / f"{pca_name}_pcspace_dist_{ref_tag}_{red_tag}_{alg_tag}_{pcs_tag}_{tlabel}.pdf",
+                dpi=300
+            )
         if save_csv:
             events, specs, tmean, D = res["events"], res["specs"], res["times"], res["distances"]
             tidy = []
@@ -1097,21 +1032,27 @@ class AggregateVisualizer:
                 others = [e for e in events if e != reference]
                 for k, (t0, t1) in enumerate(specs):
                     for j, ev in enumerate(others):
-                        tidy.append({"pca_name": pca_name, "reference": reference, "event": ev, "t0": t0, "t1": t1,
-                                     "t_mean": tmean[k], "distance": float(D[k, j]), "n_pcs": n_pcs,
-                                     "align_trajs": align_trajs, "align_method": align_method})
+                        tidy.append({
+                            "pca_name": pca_name, "reference": reference, "event": ev, "t0": t0, "t1": t1,
+                            "t_mean": tmean[k], "distance": float(D[k, j]), "n_pcs": n_pcs,
+                            "align_trajs": align_trajs, "align_method": align_method
+                        })
             else:
                 K, N, _ = D.shape
                 for k, (t0, t1) in enumerate(specs):
                     for i in range(N):
                         for j in range(N):
-                            if i == j: continue
-                            tidy.append({"pca_name": pca_name, "event_i": events[i], "event_j": events[j], "t0": t0,
-                                         "t1": t1, "t_mean": tmean[k], "distance": float(D[k, i, j]),
-                                         "n_pcs": n_pcs, "align_trajs": align_trajs, "align_method": align_method})
+                            if i == j:
+                                continue
+                            tidy.append({
+                                "pca_name": pca_name, "event_i": events[i], "event_j": events[j], "t0": t0,
+                                "t1": t1, "t_mean": tmean[k], "distance": float(D[k, i, j]),
+                                "n_pcs": n_pcs, "align_trajs": align_trajs, "align_method": align_method
+                            })
             pd.DataFrame(tidy).to_csv(
                 figdir / f"{pca_name}_pcspace_dist_{ref_tag}_{red_tag}_{alg_tag}_{pcs_tag}_{tlabel}.csv",
-                index=False)
+                index=False
+            )
 
         return res, (fig, ax)
 
