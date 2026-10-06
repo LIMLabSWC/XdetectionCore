@@ -672,7 +672,7 @@ def get_main_sess_td_df(_name=None, _date=None, _main_sess_td_name=None, _home_d
 
     _date = extract_date(abs_td_path.stem)
     _name = abs_td_path.stem.split('_')[0]
-    if sessname is not None:
+    if sessname is None:
         sessname = f'{_name}_{_date}'
 
     # set a multiindex of name, date, sess and trial num

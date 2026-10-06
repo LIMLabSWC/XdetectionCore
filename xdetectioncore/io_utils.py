@@ -1,5 +1,6 @@
 from collections import defaultdict
 from types import SimpleNamespace
+import warnings
 
 import numpy as np
 import joblib
@@ -300,45 +301,63 @@ def load_response_dfs(save_path: Path) -> defaultdict[str, pd.DataFrame]:
 
 
 class ZarrRateStore:
-    """Handles read/write operations for high-dimensional arrays in Zarr."""
-    
-    def __init__(self, zarr_path: Path):
-        self.root = zarr.open_group(store=str(zarr_path), mode='a')
-        
-    def save_event_rates(self, session_id: str, event_name: str, 
-                         rate_matrix: np.ndarray, unit_ids: np.ndarray):
-        """Saves a 3D rate matrix (Trials x Units x Timebins) with trial-level chunking."""
-        sess_group = self.root.require_group(str(session_id))
-        
-        arr = sess_group.create_dataset(
-            name=str(event_name),
-            data=rate_matrix,
-            chunks=(1, rate_matrix.shape[1], rate_matrix.shape[2]),
-            overwrite=True,
-            compressor=zarr.Blosc(cname='zstd', clevel=3)
-        )
-        arr.attrs['unit_ids'] = list(unit_ids)
+    """Interface for reading per-session Zarr stores from file storage."""
+    def __init__(self, rates_dir: Path):
+        self.rates_dir = rates_dir
 
-    def load_event_rates(self, session_id: str, event_name: str, units: list = None):
-        """Loads event rate matrices, with optional unit-level slicing."""
-        arr = self.root[str(session_id)][str(event_name)]
-        
-        if units is None:
-            return arr[:]
-            
-        all_units = arr.attrs['unit_ids']
-        unit_indices = [all_units.index(u) for u in units]
-        return arr.oindex[:, unit_indices, :]
+    def load_event_rates(self, session_id: str, event_name: str):
+        # Target per-session zarr directory: <rates_dir>/<session_id>.zarr
+        sess_zarr_path = self.rates_dir / f"{session_id}.zarr"
+
+        # Fallback check if a single unified rates.zarr store is used
+        if not sess_zarr_path.exists() and self.rates_dir.suffix == ".zarr":
+            sess_zarr_path = self.rates_dir
+
+        if not sess_zarr_path.exists():
+            raise KeyError(f"Zarr store for session '{session_id}' not found at {sess_zarr_path}")
+
+        z_group = zarr.open_group(store=str(sess_zarr_path), mode='r')
+
+        # 1. Primary path for per-session stores (<session_id>.zarr)
+        # Event arrays live directly at root level
+        if event_name in z_group:
+            return z_group[event_name][:]
+
+        # 2. Path for unified multi-session stores where session_id is a sub-group
+        if session_id in z_group:
+            sess_node = z_group[session_id]
+            if event_name in sess_node:
+                return sess_node[event_name][:]
+
+        # 3. Path where event keys are stored as full relative paths (e.g., '101/A-0')
+        path_key = f"{session_id}/{event_name}"
+        if path_key in z_group:
+            return z_group[path_key][:]
+
+        # 4. Fallback check for session prefix variations (e.g., 'sess_101/A-0')
+        for key in z_group.keys():
+            if key.endswith(session_id) and isinstance(z_group[key], zarr.hierarchy.Group):
+                if event_name in z_group[key]:
+                    return z_group[key][event_name][:]
+
+        raise KeyError(
+            f"Event '{event_name}' not found for session '{session_id}' in Zarr store at {sess_zarr_path}. "
+            f"Available top-level keys: {list(z_group.keys())}"
+        )
+
 
 class EphysDataset:
     """Main interface for querying metadata, Parquet events/spikes, and Zarr rate matrices."""
-    
+
     def __init__(self, db_root: str | Path):
         self.root = Path(db_root)
         self.spikes_path = self.root / "spikes"
         self.events_path = self.root / "events"
-        self.rates_store = ZarrRateStore(self.root / "rates.zarr")
         
+        # Point store to the rates directory containing <session_id>.zarr files
+        rates_dir = self.root / "rates" if (self.root / "rates").is_dir() else self.root / "rates.zarr"
+        self.rates_store = ZarrRateStore(rates_dir)
+
         # Load registry into memory for instant filtering
         registry_file = self.root / "metadata.csv"
         if registry_file.exists():
@@ -350,7 +369,7 @@ class EphysDataset:
         """Find session IDs matching metadata filters (e.g., stage=3, animal='DO79')."""
         if self.registry.empty:
             return []
-            
+
         query_str = " and ".join(f"{k} == {repr(v)}" for k, v in kwargs.items())
         return self.registry.query(query_str)['session_id'].astype(str).tolist()
 
@@ -360,6 +379,6 @@ class EphysDataset:
         for sess in sessions:
             try:
                 pop_data[str(sess)] = self.rates_store.load_event_rates(str(sess), event_name)
-            except KeyError:
-                print(f"Warning: Rates for '{event_name}' not found in session {sess}.")
+            except KeyError as e:
+                warnings.warn(f"Rates for '{event_name}' not found in session {sess}.\n{e}")
         return pop_data
