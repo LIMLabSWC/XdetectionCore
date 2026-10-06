@@ -109,7 +109,7 @@ def format_sound_writes(sound_writes_df: pd.DataFrame, patterns: list[int, ],nor
     sound_writes_df['Time_diff'] = sound_writes_df['Timestamp'].diff()
     sound_writes_df['Payload_diff'] = sound_writes_df['Payload'].diff()
     if 3 in sound_writes_df['Payload'].values:
-        matrix_d_X_times = np.array(np.matrix(sound_writes_df['Timestamp'].values).T -
+        matrix_d_X_times = np.array(np.asmatrix (sound_writes_df['Timestamp'].values).T -
                                     sound_writes_df.query('Payload == 3')['Timestamp'].values)
         matrix_d_X_times[matrix_d_X_times > 0] = 9999
         matrix_d_X_times = np.min(np.abs(matrix_d_X_times),axis=1)

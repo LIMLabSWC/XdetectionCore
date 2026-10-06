@@ -77,7 +77,7 @@ def get_n_since_last_patt(td_df:pd.DataFrame) -> pd.DataFrame:
         td_df['n_since_last'] = np.full_like(td_df.index, np.nan)
         return td_df
     trial_nums = pattern_trials.index.get_level_values('trial_num')
-    pattern_trial_num_dff = np.mat(trial_nums.values).T - trial_nums.values
+    pattern_trial_num_dff = np.asmatrix(trial_nums.values).T - trial_nums.values
     pattern_trial_num_dff[pattern_trial_num_dff <= 0] = 9999
     n_since_last = np.min(pattern_trial_num_dff, axis=1)
     n_since_last[0] = trial_nums[0]  # for the first pattern trial, n_since_last is the trial number itself
