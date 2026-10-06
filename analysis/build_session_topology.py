@@ -61,10 +61,12 @@ def get_animal_topology(animal, tdata_root, match_roots):
 
         for suffix, t_file in files:
             suffix_str = f"{suffix:03d}"
+            session_id = f"{animal}_{date}_{suffix_str}"
             row = {
                 'name': animal,
                 'date': date,
                 'suffix': suffix_str,
+                'sess_id': session_id,
                 'tdata_file': t_file,
                 'status': 'Complete'
             }
